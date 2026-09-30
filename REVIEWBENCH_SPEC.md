@@ -1,8 +1,10 @@
 # ReviewBench — Product & Technical Specification
 
-> **Status:** Living spec · v0.4 · 30 Sep 2026 (P1 and P2 tooling implemented; see Progress Report)
+> **Status:** Living spec · v0.5 · 30 Sep 2026 (P1–P6 website functionality implemented at demo/pilot depth; deferred work in `LATER.md`; see Progress Report)
 > **Purpose:** Single source of truth for spec-driven development. Every feature, rule, and threshold the system implements should trace back to a requirement ID in this document (`FR-`, `NFR-`, `GR-`, `AC-`, etc.). When the code and this spec disagree, one of them is a bug — fix whichever is wrong and update the other.
 > **Companion document:** *ReviewBench — Progress Report* (what is built vs. remaining, keyed to the IDs below).
+
+> **Implementation note (v0.5).** Requirements marked *(Planned)* below that are now built: SCR-1, SCR-2 (reported, not yet weighted), SCR-3 (Rasch/1PL), SCR-5, TR-2, TR-4, TR-5, TR-6 (summary page), FR-R-16, FR-R-17 (print to PDF), SB-3, SB-4, CU-1, CU-2, CU-3, CU-6, CU-7, CU-8/FB-6, FB-3, EX-5, KA-1/KA-2 (lexical retrieval behind `RAG_EXAMPLES=on`), CO-1/CO-3 (audit pack export, notice template), M2 Decision Review, M3 Directed Build (pilot: scripted assistant, server-side trajectory, signature-based fault checks). Still deferred: SEC-4 SSO, multi-tenancy, ATS webhooks, KA-5–7 fine-tuning, EX-3 shadow mode, SB-1/SB-2 generated scenarios, CU-4/CU-5, SC-7 variants, SCR-4 equating.
 
 ---
 
