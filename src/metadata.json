@@ -1,0 +1,22 @@
+{
+  "default": {
+    "title": "ReviewBench",
+    "description": "Assess how engineers review AI-written code."
+  },
+  "/": {
+    "title": "ReviewBench — AI code review assessments",
+    "description": "Assess how engineers review AI-written code, graded by an evidence-checked panel of independent AI judges."
+  },
+  "/assess": {
+    "title": "Review assessment — ReviewBench",
+    "description": "Review an AI-written pull request."
+  },
+  "/recruiter": {
+    "title": "Candidates — ReviewBench",
+    "description": "Recruiter dashboard for ReviewBench assessments."
+  },
+  "/report": {
+    "title": "Candidate report — ReviewBench",
+    "description": "Evidence-backed grading report."
+  }
+}
