@@ -4,9 +4,9 @@ import { useMutation, useQuery } from 'convex/react'
 import { ArrowRight, Check, Clock, Info, Loader2, Lock, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import { SeverityChip, TopBar } from '@/components/rb'
-import { MODULE_LABEL, SCENARIOS, SEVERITIES } from '@/lib/scenario'
+import { SCENARIOS, SEVERITIES } from '@/lib/scenario'
 import type { AnyScenario, BuildScenario, DecisionScenario, Scenario, Severity } from '@/lib/scenario'
-import { BuildWorkspace } from '@/components/build-workspace'
+import { AssistantChat, BuildWorkspace } from '@/components/build-workspace'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
 
@@ -37,6 +37,9 @@ function useHydrated() {
 
 const ScenarioContext = createContext<AnyScenario>(SCENARIOS['ord-482-junior'])
 const useScenario = () => useContext(ScenarioContext)
+
+// Plain, candidate-facing names for each kind of assessment.
+const KIND_LABEL: Record<AnyScenario['kind'], string> = { code: 'Code review', decision: 'Design review', build: 'Build with AI' }
 
 const clean = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : fallback
@@ -84,7 +87,7 @@ function GroupLanding({ groupToken }: { groupToken: string }) {
           {group.modules.map((m, i) => (
             <li key={m.scenarioId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-5">
               <div>
-                <div className="text-xs text-muted-foreground">Part {i + 1} · {MODULE_LABEL[m.kind]} · {m.minutes} min</div>
+                <div className="text-xs text-muted-foreground">Part {i + 1} · {KIND_LABEL[m.kind]} · {m.minutes} min</div>
                 <div className="mt-1 font-semibold">{SCENARIOS[m.scenarioId]?.title ?? m.title}</div>
               </div>
               {m.status === 'submitted' ? (
@@ -214,7 +217,7 @@ function Attempt({ token, session }: { token: string; session: Session }) {
   return (
     <div className="min-h-screen bg-background">
       <TopBar
-        subtitle={`${scenario.ticketId} · ${MODULE_LABEL[scenario.kind]} · ${scenario.level}`}
+        subtitle={scenario.kind === 'build' ? scenario.title : `${scenario.ticketId} · ${KIND_LABEL[scenario.kind]} · ${scenario.level}`}
         right={
           active && deadline ? (
             <>
@@ -228,7 +231,7 @@ function Attempt({ token, session }: { token: string; session: Session }) {
         <Intro name={session.name} minutes={session.minutes} extraMinutes={session.extraMinutes} onStart={begin} starting={starting} error={startError} />
       )}
       {step === 'review' && scenario.kind === 'code' && (
-        <Review comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
+        <Review token={token} chat={draft?.chat ?? []} comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
       )}
       {step === 'review' && scenario.kind === 'decision' && (
         <DecisionForm
@@ -367,21 +370,21 @@ function Intro({
   const bullets = scenario.kind === 'decision' ? scenario.constraints : scenario.criteria
   const steps =
     scenario.kind === 'code'
-      ? ['Read the pull request', 'Comment on lines and rate severity', 'Choose a verdict', 'Answer 3 short questions']
+      ? ["Read the pull request and the agent's notes", 'Ask the agent about anything unclear', 'Comment on lines that need changes', 'Approve or request changes', 'Answer 3 short questions']
       : scenario.kind === 'decision'
         ? ['Read the context and the AI recommendation', 'Approve or reject it', 'Explain flawed assumptions and ignored risks', 'Propose what you would do instead']
-        : ['Read the ticket', 'Build it with the AI assistant', 'Run the visible tests', 'Submit your final code']
+        : ['Read the task', 'Write code with the AI assistant', 'Run the tests', 'Submit']
   const note =
     scenario.kind === 'code'
       ? "A teammate's AI agent already opened a pull request for this ticket. Review it as you would any PR: leave line comments, rate severity, and decide whether to approve or request changes. AI-written code can be confidently wrong, so verify before you trust it. You can read every file, including unchanged helpers."
       : scenario.kind === 'decision'
-        ? 'An AI agent wrote this recommendation. It may contain sound ideas and flawed reasoning side by side. Judge each claim against the context and constraints.'
-        : "The assistant is usually right, but not always. Use it like a capable teammate: accept what's correct, verify what matters, and fix what isn't. Everything you ask and accept is recorded."
+        ? 'An AI agent wrote this recommendation. It may contain sound ideas and flawed reasoning side by side. Weigh each claim against the context and constraints.'
+        : "Use the AI assistant however you like, just as you would at work. It can be wrong, so check what it gives you. You're responsible for the code you submit. Your chat with the assistant is shared with the hiring team."
   return (
     <main className="mx-auto grid max-w-6xl gap-10 px-6 py-12 lg:grid-cols-[1fr_340px]">
       <div>
         <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          {MODULE_LABEL[scenario.kind]} · {scenario.ticketId}
+          {KIND_LABEL[scenario.kind]}{scenario.kind === 'build' ? '' : ` · ${scenario.ticketId}`}
         </p>
         <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight">{scenario.title}</h1>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -393,7 +396,7 @@ function Intro({
         </div>
         <p className="mt-6 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">{scenario.summary}</p>
 
-        <h2 className="mt-8 text-sm font-semibold">{scenario.kind === 'decision' ? 'Constraints' : 'Acceptance criteria'}</h2>
+        <h2 className="mt-8 text-sm font-semibold">{scenario.kind === 'decision' ? 'Constraints' : scenario.kind === 'build' ? 'What your code must do' : 'Acceptance criteria'}</h2>
         <ul className="mt-3 space-y-2.5">
           {bullets.map((c) => (
             <li key={c} className="flex gap-3 text-sm text-foreground/80">
@@ -441,12 +444,16 @@ function Intro({
 }
 
 function Review({
+  token,
+  chat,
   comments,
   setComments,
   verdict,
   setVerdict,
   onNext,
 }: {
+  token: string
+  chat: Array<{ id: string; type: string; data: string }>
   comments: Comment[]
   setComments: React.Dispatch<React.SetStateAction<Comment[]>>
   verdict: Verdict | null
@@ -457,6 +464,11 @@ function Review({
   const [activePath, setActivePath] = useState(scenario.files[0].path)
   const [composer, setComposer] = useState<{ line: number; severity: Severity; text: string; error: string } | null>(null)
   const [nextError, setNextError] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const question = (a: string) => {
+    setPrompt(`You assumed "${a.replace(/\.$/, '')}". How do you know that's true?`)
+    document.getElementById('assistant-input')?.focus()
+  }
   const file = useMemo(() => scenario.files.find((f) => f.path === activePath)!, [activePath, scenario])
 
   const openComposer = (line: number) => setComposer({ line, severity: 'high', text: '', error: '' })
@@ -522,6 +534,27 @@ function Review({
       </aside>
 
       <section className="min-w-0 flex-1 bg-card">
+        {scenario.rationale || scenario.assumptions?.length ? (
+          <div className="border-b border-border bg-background px-5 py-4">
+            <h2 className="text-sm font-semibold">The AI agent's notes</h2>
+            {scenario.rationale ? <p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">{scenario.rationale}</p> : null}
+            {scenario.assumptions?.length ? (
+              <>
+                <h3 className="mt-3 text-xs font-semibold text-muted-foreground">Assumptions it made</h3>
+                <ul className="mt-2 space-y-2">
+                  {scenario.assumptions.map((a) => (
+                    <li key={a} className="flex flex-wrap items-start justify-between gap-2 text-sm text-foreground/80">
+                      <span className="min-w-0 flex-1">{a}</span>
+                      <button onClick={() => question(a)} className="shrink-0 rounded-md border border-border px-2 py-0.5 text-xs font-medium hover:bg-accent">
+                        Question this
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <span className="font-mono text-[13px] font-semibold">{file.path}</span>
           <span className="font-mono text-xs">
@@ -616,7 +649,20 @@ function Review({
         </div>
       </section>
 
-      <aside className="border-t border-border bg-card p-5 lg:w-72 lg:shrink-0 lg:border-l lg:border-t-0">
+      <aside className="flex flex-col border-t border-border bg-card lg:w-96 lg:shrink-0 lg:border-l lg:border-t-0">
+        <div className="border-b border-border px-5 py-3">
+          <h2 className="text-sm font-semibold">Ask the agent</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">The AI that wrote this pull request. Ask why it did something.</p>
+        </div>
+        <AssistantChat
+          token={token}
+          chat={chat}
+          prompt={prompt}
+          setPrompt={setPrompt}
+          emptyText="Not sure about a change? Ask the agent to explain it."
+          className="lg:max-h-[55vh] lg:flex-1"
+        />
+        <div className="border-t border-border p-5">
         <h2 className="text-sm font-semibold">Verdict</h2>
         <p className="mt-1 text-xs text-muted-foreground">Would you merge this PR as-is?</p>
         <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-border">
@@ -641,6 +687,7 @@ function Review({
           Continue to questions <ArrowRight className="size-4" />
         </button>
         <p className="mt-2 text-xs text-muted-foreground">Your review is locked once you continue.</p>
+        </div>
       </aside>
     </div>
   )
@@ -716,12 +763,10 @@ function Done({ name, token, groupToken }: { name?: string; token: string; group
         <div className="mx-auto grid size-12 place-items-center rounded-full border border-foreground">
           <Check className="size-5" />
         </div>
-        <h1 className="mt-4 text-xl font-semibold">Review submitted</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Thanks{name ? `, ${name}` : ''}. Your response for {scenario.ticketId} is recorded.</p>
+        <h1 className="mt-4 text-xl font-semibold">Submitted</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Thanks{name ? `, ${name}` : ''}. We've received your work on "{scenario.title}".</p>
         <div className="mt-6 space-y-3 border-t border-border pt-5 text-left text-sm">
-          <p><span className="font-semibold">Now:</span> <span className="text-muted-foreground">a panel of independent AI judges scores your comments against the known issues.</span></p>
-          <p><span className="font-semibold">If they disagree</span> <span className="text-muted-foreground">on a serious item, a human reviews it.</span></p>
-          <p><span className="font-semibold">Then</span> <span className="text-muted-foreground">the hiring team receives an evidence-backed report.</span></p>
+          <p className="text-muted-foreground">The hiring team will look at your work and be in touch about next steps. You can close this page.</p>
           <p className="text-muted-foreground">
             If the hiring team shares your results, you'll find them at{' '}
             <Link to="/results" search={{ t: token }} className="font-semibold text-foreground underline underline-offset-4">your results page</Link>,
@@ -732,11 +777,7 @@ function Done({ name, token, groupToken }: { name?: string; token: string; group
           <Link to="/assess" search={{ t: '', g: groupToken }} className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
             Continue to the next part <ArrowRight className="size-4" />
           </Link>
-        ) : (
-          <Link to="/" className="mt-6 inline-block text-sm font-semibold underline-offset-4 hover:underline">
-            Back to home
-          </Link>
-        )}
+        ) : null}
       </div>
     </main>
   )

@@ -135,6 +135,8 @@ export const submit = mutation({
       comments: locked ? draft.comments : args.comments,
       answers: args.answers,
       autoSubmitted: false,
+      // PR-author chat on code reviews.
+      build: draft?.events?.length ? { code: "", events: draft.events } : undefined,
     })
     return null
   },

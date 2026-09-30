@@ -7,6 +7,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, RecruiterNav, TopBar, cleanError } from '@/components/rb'
 import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { AssessmentLink } from '@/components/assessment-link'
 import siteMetadata from '@/metadata.json'
 
 const meta = siteMetadata['/recruiter']
@@ -54,16 +55,17 @@ function Recruiter() {
         }
       />
       <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Candidates</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Code Review, Decision Review and Directed Build assessments</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Assessments</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Create an assessment, share its link or QR code, then open each candidate's evidence-backed report.</p>
 
-        <div className="mt-6 flex flex-wrap gap-3">
+        <AssessmentsPanel />
+
+        <h2 className="mt-10 text-lg font-semibold tracking-tight">All submissions</h2>
+        <div className="mt-4 flex flex-wrap gap-3">
           <Stat label="Submitted" value={rows?.length ?? 0} />
           <Stat label="Graded" value={completed} />
           <Stat label="Awaiting human review" value={flagged} tone={flagged ? 'danger' : undefined} />
         </div>
-
-        <InvitePanel />
 
         <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
@@ -116,7 +118,7 @@ function Recruiter() {
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">
-                    {rows && rows.length > 0 ? 'No submissions match these filters.' : 'No submissions yet. Invite a candidate above to get started.'}
+                    {rows && rows.length > 0 ? 'No submissions match these filters.' : 'No submissions yet. Create an assessment above and share its link.'}
                   </td>
                 </tr>
               ) : (
@@ -163,9 +165,147 @@ function Recruiter() {
           </table>
         </div>
 
-        <TeamPanel />
+        <details className="mt-10 rounded-xl border border-border bg-card px-6 py-4">
+          <summary className="cursor-pointer text-sm font-semibold">Single-use invites &amp; hiring team</summary>
+          <InvitePanel />
+          <TeamPanel />
+        </details>
       </main>
     </div>
+  )
+}
+
+/** Mirrors ROLES in convex/assessments.ts. */
+const ROLES = ['AI Engineer', 'Software Engineer', 'Backend Engineer', 'ML Engineer', 'Full-Stack Engineer']
+const LEVELS = ['Junior', 'Mid', 'Senior']
+const SCENARIO_LIST = Object.values(SCENARIOS)
+// Flagship: AI PR review with the agent (code review + agent chat).
+const DEFAULT_SCENARIO = SCENARIOS['pay-217-mid'] ?? SCENARIO_LIST[0]
+const levelOf = (id: string) => (LEVELS.includes(SCENARIOS[id].level) ? SCENARIOS[id].level : 'Junior')
+const fieldCls = 'rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/30'
+
+function AssessmentsPanel() {
+  const assessments = useQuery(api.assessments.list)
+  const create = useMutation(api.assessments.create)
+  const [role, setRole] = useState(ROLES[0])
+  const [scenarioId, setScenarioId] = useState(DEFAULT_SCENARIO.id)
+  const [level, setLevel] = useState(levelOf(DEFAULT_SCENARIO.id))
+  const [minutes, setMinutes] = useState(String(DEFAULT_SCENARIO.minutes))
+  const [aiAssisted, setAiAssisted] = useState(DEFAULT_SCENARIO.kind !== 'decision')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState<{ id: string; token: string } | null>(null)
+  const aiCapable = SCENARIOS[scenarioId]?.kind !== 'decision'
+
+  const pickScenario = (id: string) => {
+    setScenarioId(id)
+    setMinutes(String(SCENARIOS[id].minutes))
+    setLevel(levelOf(id))
+    setAiAssisted(SCENARIOS[id].kind === 'build')
+  }
+
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiCapable && aiAssisted }))
+    } catch (err) {
+      setError(cleanError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <section className="mt-6 rounded-xl border border-border bg-card p-6">
+        <h2 className="text-sm font-semibold">Create assessment</h2>
+        <form onSubmit={send} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_2fr_120px_120px]">
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Role
+            <select value={role} onChange={(e) => setRole(e.target.value)} className={fieldCls}>
+              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Module
+            <select value={scenarioId} onChange={(e) => pickScenario(e.target.value)} className={fieldCls}>
+              {SCENARIO_LIST.map((sc) => (
+                <option key={sc.id} value={sc.id}>{MODULE_LABEL[sc.kind]} · {sc.ticketId} {sc.title}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Level
+            <select value={level} onChange={(e) => setLevel(e.target.value)} className={fieldCls}>
+              {LEVELS.map((l) => <option key={l}>{l}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Time limit (min)
+            <input type="number" min={10} max={90} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={fieldCls} />
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm sm:col-span-2 lg:col-span-3">
+            <input type="checkbox" checked={aiCapable && aiAssisted} disabled={!aiCapable} onChange={(e) => setAiAssisted(e.target.checked)} />
+            AI-assisted
+            <span className="text-xs text-muted-foreground">
+              {aiCapable ? 'Candidate works with an AI assistant; judges score the whole interaction.' : 'Not available for decision reviews.'}
+            </span>
+          </label>
+          <button type="submit" disabled={busy} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+            {busy ? 'Creating…' : 'Create'}
+          </button>
+        </form>
+        {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
+        {created ? (
+          <div className="mt-5 border-t border-border pt-5">
+            <AssessmentLink token={created.token} />
+            <Link to="/assessment" search={{ id: created.id }} className="mt-3 inline-block text-sm font-semibold hover:underline">
+              View candidates →
+            </Link>
+          </div>
+        ) : null}
+      </section>
+
+      <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+              <th className="px-5 py-3 font-semibold">Assessment</th>
+              <th className="px-5 py-3 font-semibold">Module</th>
+              <th className="px-5 py-3 font-semibold">Joined</th>
+              <th className="px-5 py-3 font-semibold">In progress</th>
+              <th className="px-5 py-3 font-semibold">Submitted</th>
+              <th className="px-5 py-3 font-semibold">Avg score</th>
+              <th className="px-5 py-3 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assessments === undefined ? (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground"><Loader2 className="mx-auto size-5 animate-spin" /></td></tr>
+            ) : assessments.length === 0 ? (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground">No assessments yet. Create one above.</td></tr>
+            ) : (
+              assessments.map((a) => (
+                <tr key={a._id} className="border-b border-border last:border-0 hover:bg-accent/50">
+                  <td className="px-5 py-4">
+                    <Link to="/assessment" search={{ id: a._id }} className="font-semibold hover:underline">{a.title}</Link>
+                    <div className="text-xs text-muted-foreground">{a.role} · {a.level} · {a.minutes} min{a.aiAssisted ? ' · AI-assisted' : ''}</div>
+                  </td>
+                  <td className="px-5 py-4 text-muted-foreground">{SCENARIOS[a.scenarioId]?.ticketId ?? a.scenarioId}</td>
+                  <td className="px-5 py-4 font-mono">{a.counts.invited + a.counts.started + a.counts.submitted}</td>
+                  <td className="px-5 py-4 font-mono">{a.counts.started}</td>
+                  <td className="px-5 py-4 font-mono">{a.counts.submitted}</td>
+                  <td className="px-5 py-4 font-mono">{a.avgScore === null ? '—' : Math.round(a.avgScore)}</td>
+                  <td className="px-5 py-4 capitalize text-muted-foreground">{a.status}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 

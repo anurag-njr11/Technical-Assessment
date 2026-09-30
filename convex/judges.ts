@@ -85,7 +85,13 @@ export type Asker = (judge: Judge, prompt: string, stage: string) => Promise<Jud
  * Any OpenAI-compatible chat endpoint: OpenRouter (default, serves every panel
  * model with one key), Ollama (`http://localhost:11434/v1`), Groq, Together...
  */
-async function callModel(ref: ModelRef, prompt: string): Promise<string> {
+export async function callModel(
+  ref: ModelRef,
+  prompt: string,
+  system = SYSTEM,
+  /** Filled with the provider's reported token usage, when given. */
+  usage?: { input: number; output: number },
+): Promise<string> {
   const baseUrl = (process.env.LLM_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "")
   const key = process.env.LLM_API_KEY
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -95,14 +101,21 @@ async function callModel(ref: ModelRef, prompt: string): Promise<string> {
       model: ref.model,
       temperature: 0,
       messages: [
-        { role: "system", content: SYSTEM },
+        { role: "system", content: system },
         { role: "user", content: prompt },
       ],
     }),
   })
   if (response.status === 402) throw new Error("AI credits are currently unavailable.")
   if (!response.ok) throw new Error(`Model request failed (${response.status}).`)
-  const res = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  const res = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>
+    usage?: { prompt_tokens?: number; completion_tokens?: number }
+  }
+  if (usage) {
+    usage.input = res.usage?.prompt_tokens ?? Math.ceil((system.length + prompt.length) / 4)
+    usage.output = res.usage?.completion_tokens ?? Math.ceil(String(res.choices?.[0]?.message?.content ?? "").length / 4)
+  }
   return String(res.choices?.[0]?.message?.content ?? "")
 }
 

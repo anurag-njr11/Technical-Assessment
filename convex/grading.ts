@@ -1,12 +1,15 @@
 import { v } from "convex/values"
 import { internalAction } from "./_generated/server"
 import { internal } from "./_generated/api"
-import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
+import { ANSWER_KEYS, ASSUMPTION_KEYS, SCENARIO_META } from "./answerKey"
 import type { AnswerKey, KeyItem } from "./answerKey"
 import { PROMPT_VERSION, RUBRIC_VERSION, getPanel, liveAsker, redact } from "./judges"
 import type { Asker, Judge, JudgeAnswer, Trace } from "./judges"
 import { SCORING_VERSION, computeScore } from "./scoring"
-import { gradeBuild } from "./buildScenario"
+import { gradeTrajectory } from "./trajectory"
+import type { Assumption } from "./trajectory"
+import { buildTask } from "./buildScenario"
+import { SCENARIOS } from "../src/lib/scenario"
 import { applyConfig } from "./items"
 import type { CommentClass, ExtraComment, ItemResult, Result } from "./scoring"
 
@@ -463,14 +466,43 @@ export async function gradeSubmission(
   }
 }
 
+/** The AI agent's stated assumptions (candidate-visible text) joined with the server-only key. */
+function assumptionsFor(scenarioId: string, key: AnswerKey): Assumption[] {
+  const texts = (SCENARIOS[scenarioId] as { assumptions?: string[] } | undefined)?.assumptions ?? []
+  return (ASSUMPTION_KEYS[scenarioId] ?? []).map((a, i) => ({
+    id: `A${i + 1}`,
+    text: texts[i] ?? "",
+    flawed: a.flawed,
+    itemId: a.itemId,
+    why: key.items.find((it) => it.id === a.itemId)?.description,
+  }))
+}
+
 export const grade = internalAction({
   args: { submissionId: v.id("submissions") },
   handler: async (ctx, args) => {
     const sub = await ctx.runQuery(internal.submissions.getInternal, { id: args.submissionId })
     if (!sub) return
     if (SCENARIO_META[sub.scenarioId]?.kind === "build") {
-      const result = gradeBuild(sub.scenarioId, sub.build?.code ?? "", sub.build?.events ?? [])
-      await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
+      const traces: Trace[] = []
+      try {
+        const result = await gradeTrajectory(
+          {
+            scenarioId: sub.scenarioId,
+            code: sub.build?.code ?? "",
+            events: sub.build?.events ?? [],
+            candidateName: sub.candidateName,
+            candidateEmail: sub.candidateEmail,
+            task: buildTask(sub.scenarioId),
+          },
+          liveAsker(traces),
+        )
+        await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
+      } finally {
+        if (traces.length) {
+          await ctx.runMutation(internal.tracing.record, { submissionId: args.submissionId, promptVersion: PROMPT_VERSION, traces })
+        }
+      }
       return
     }
     const key = ANSWER_KEYS[sub.scenarioId]
@@ -486,7 +518,8 @@ export const grade = internalAction({
         ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId })
         : []
       const configured = applyConfig(key, config)
-      const result = await gradeSubmission(
+      const ask = liveAsker(traces)
+      let result = await gradeSubmission(
         {
           comments: sub.comments,
           verdict: sub.verdict,
@@ -495,10 +528,29 @@ export const grade = internalAction({
           followUps: meta?.kind === "code" ? sub.followUps : undefined,
         },
         configured.key,
-        liveAsker(traces),
+        ask,
         undefined,
         { examples },
       )
+      // Code review with the AI agent chat: attach the trajectory council on top of M1.
+      // Graded even without prompts: never questioning the agent's assumptions is itself evidence.
+      const events = sub.build?.events ?? []
+      const assumptions = assumptionsFor(sub.scenarioId, configured.key)
+      if (assumptions.length || events.some((e) => e.type === "ai_prompt")) {
+        result = await gradeTrajectory(
+          {
+            scenarioId: sub.scenarioId,
+            code: [`Verdict: ${sub.verdict}`, ...sub.comments.map((c) => `${c.file}:${c.line} ${c.text}`)].join("\n"),
+            events,
+            base: result,
+            assumptions,
+            task: meta?.title,
+            candidateName: sub.candidateName,
+            candidateEmail: sub.candidateEmail,
+          },
+          ask,
+        )
+      }
       if (configured.note) result.configNote = configured.note
       await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
     } catch (err) {

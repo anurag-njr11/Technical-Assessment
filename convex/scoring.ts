@@ -118,6 +118,12 @@ export function extraClassToCommentClass(c: ExtraComment["classification"]): Com
  * Applies overrides (oldest first; later ones win) to a machine result and
  * recomputes the score. Pure: the same inputs always give the same output.
  */
+/** Half the deterministic grade, half the mean of the judged trajectory dimensions (except issueDetection). */
+export function blendOverall(base: number, dimensions?: Array<{ key: string; score: number }>): number {
+  const others = (dimensions ?? []).filter((d) => d.key !== "issueDetection")
+  return others.length ? Math.round(0.5 * base + (0.5 * others.reduce((s, d) => s + d.score, 0)) / others.length) : base
+}
+
 export function applyOverrides(
   machine: Result,
   overrides: Override[],
@@ -166,9 +172,14 @@ export function applyOverrides(
     expectedVerdict: ctx.expectedVerdict,
     weights: machine.weights,
   })
+  // Judged runs blend in the trajectory; if every judge failed there are no valid votes and it stays deterministic.
+  const judged = machine.trajectory?.findings.some((f) => f.votes.some((v) => v.valid))
+  const overall = judged ? blendOverall(score.overall, machine.trajectory?.dimensions) : score.overall
   return {
     ...machine,
     ...score,
+    overall,
+    band: band(overall),
     items,
     extraComments: extras,
     commentClasses: [...classes.entries()].map(([commentId, cls]) => ({ commentId, cls })),

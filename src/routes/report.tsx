@@ -8,6 +8,7 @@ import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, OutcomeChip, RecruiterNav, SeverityChip, TopBar, cleanError } from '@/components/rb'
 import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { AgentPR, EvidenceReport, Timeline, type TrajectoryResult } from '@/components/evidence'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
 
@@ -133,9 +134,11 @@ function Report() {
         followUpQuality?: { value: number; detail: string; answers: Array<{ question: string; score: number; votes: number }> }
         communication?: { value: number; detail: string }
         configNote?: string
+        trajectory?: TrajectoryResult
       }
     | undefined
-  const kind = SCENARIOS[sub.scenarioId]?.kind ?? 'code'
+  const scenario = SCENARIOS[sub.scenarioId] as (typeof SCENARIOS)[string] | undefined
+  const kind = scenario?.kind ?? 'code'
   const labels = COMPONENT_LABELS[kind]
 
   return (
@@ -192,6 +195,10 @@ function Report() {
 
           {result ? (
             <>
+              {scenario?.kind === 'code' && scenario.assumptions?.length ? <AgentPR scenario={scenario} findings={result.trajectory?.findings ?? []} /> : null}
+              {result.trajectory ? (
+                <EvidenceReport trajectory={result.trajectory} overall={result.overall} band={result.band} code={sub.build?.code} events={sub.build?.events} />
+              ) : null}
               {result.machine ? (
                 <section className="rounded-xl border border-border bg-card p-4 text-sm">
                   <span className="font-semibold">Adjusted by human review.</span>{' '}
@@ -279,7 +286,7 @@ function Report() {
                   </div>
                 </section>
               ) : null}
-              {sub.build ? <Trajectory code={sub.build.code} events={sub.build.events} /> : null}
+              {sub.build && !result.trajectory ? <Timeline code={sub.build.code} events={sub.build.events} /> : null}
               <InterviewGuide items={result.items} kind={kind} />
               {sub.appeal ? (
                 <section className="rounded-xl border border-warning/30 bg-warning-soft p-5 text-sm">
@@ -737,39 +744,6 @@ function InterviewGuide({ items, kind }: { items: ItemT[]; kind: string }) {
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
         {qs.map((q) => <li key={q.q}><span>{q.q}</span> <span className="text-xs text-muted-foreground">({q.why})</span></li>)}
       </ol>
-    </section>
-  )
-}
-
-function Trajectory({ code, events }: { code: string; events: Array<{ id: string; t: number; type: string; data?: string }> }) {
-  const label: Record<string, string> = {
-    ai_prompt: 'Asked', ai_response: 'Assistant', fault_injected: 'Planted fault', accept_suggestion: 'Accepted', reject_suggestion: 'Dismissed', test_run: 'Ran tests', file_open: 'Opened',
-  }
-  const show = (e: { type: string; data?: string }) => {
-    if (e.type === 'ai_response') {
-      try {
-        return (JSON.parse(e.data ?? '{}') as { text?: string }).text ?? ''
-      } catch {
-        return e.data ?? ''
-      }
-    }
-    if (e.type === 'fault_injected') return (e.data ?? '').split('|')[0]
-    return e.data ?? ''
-  }
-  return (
-    <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Trajectory ({events.length} events)</h2>
-      <ol className="mt-3 max-h-80 space-y-1.5 overflow-y-auto text-sm">
-        {events.map((e) => (
-          <li key={e.id} className="flex gap-3">
-            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{Math.floor(e.t / 60000)}:{String(Math.floor((e.t % 60000) / 1000)).padStart(2, '0')}</span>
-            <span className={cn('w-24 shrink-0 text-xs font-semibold', e.type === 'fault_injected' ? 'text-destructive' : '')}>{label[e.type] ?? e.type}</span>
-            <span className="min-w-0 truncate text-muted-foreground">{show(e)}</span>
-          </li>
-        ))}
-      </ol>
-      <h3 className="mt-5 text-sm font-semibold">Final code</h3>
-      <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-3 font-mono text-xs">{code}</pre>
     </section>
   )
 }

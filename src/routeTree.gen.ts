@@ -16,8 +16,10 @@ import { Route as ReliabilityRouteImport } from './routes/reliability'
 import { Route as RecruiterRouteImport } from './routes/recruiter'
 import { Route as MethodologyRouteImport } from './routes/methodology'
 import { Route as ItemsRouteImport } from './routes/items'
+import { Route as AssessmentRouteImport } from './routes/assessment'
 import { Route as AssessRouteImport } from './routes/assess'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ATokenRouteImport } from './routes/a.$token'
 
 const ReviewRoute = ReviewRouteImport.update({
   id: '/review',
@@ -54,6 +56,11 @@ const ItemsRoute = ItemsRouteImport.update({
   path: '/items',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AssessmentRoute = AssessmentRouteImport.update({
+  id: '/assessment',
+  path: '/assessment',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AssessRoute = AssessRouteImport.update({
   id: '/assess',
   path: '/assess',
@@ -64,10 +71,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ATokenRoute = ATokenRouteImport.update({
+  id: '/a/$token',
+  path: '/a/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
+  '/assessment': typeof AssessmentRoute
   '/items': typeof ItemsRoute
   '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
@@ -75,10 +88,12 @@ export interface FileRoutesByFullPath {
   '/report': typeof ReportRoute
   '/results': typeof ResultsRoute
   '/review': typeof ReviewRoute
+  '/a/$token': typeof ATokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
+  '/assessment': typeof AssessmentRoute
   '/items': typeof ItemsRoute
   '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
@@ -86,11 +101,13 @@ export interface FileRoutesByTo {
   '/report': typeof ReportRoute
   '/results': typeof ResultsRoute
   '/review': typeof ReviewRoute
+  '/a/$token': typeof ATokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
+  '/assessment': typeof AssessmentRoute
   '/items': typeof ItemsRoute
   '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
@@ -98,12 +115,14 @@ export interface FileRoutesById {
   '/report': typeof ReportRoute
   '/results': typeof ResultsRoute
   '/review': typeof ReviewRoute
+  '/a/$token': typeof ATokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/assess'
+    | '/assessment'
     | '/items'
     | '/methodology'
     | '/recruiter'
@@ -111,10 +130,12 @@ export interface FileRouteTypes {
     | '/report'
     | '/results'
     | '/review'
+    | '/a/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/assess'
+    | '/assessment'
     | '/items'
     | '/methodology'
     | '/recruiter'
@@ -122,10 +143,12 @@ export interface FileRouteTypes {
     | '/report'
     | '/results'
     | '/review'
+    | '/a/$token'
   id:
     | '__root__'
     | '/'
     | '/assess'
+    | '/assessment'
     | '/items'
     | '/methodology'
     | '/recruiter'
@@ -133,11 +156,13 @@ export interface FileRouteTypes {
     | '/report'
     | '/results'
     | '/review'
+    | '/a/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AssessRoute: typeof AssessRoute
+  AssessmentRoute: typeof AssessmentRoute
   ItemsRoute: typeof ItemsRoute
   MethodologyRoute: typeof MethodologyRoute
   RecruiterRoute: typeof RecruiterRoute
@@ -145,6 +170,7 @@ export interface RootRouteChildren {
   ReportRoute: typeof ReportRoute
   ResultsRoute: typeof ResultsRoute
   ReviewRoute: typeof ReviewRoute
+  ATokenRoute: typeof ATokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -198,6 +224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ItemsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/assessment': {
+      id: '/assessment'
+      path: '/assessment'
+      fullPath: '/assessment'
+      preLoaderRoute: typeof AssessmentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/assess': {
       id: '/assess'
       path: '/assess'
@@ -212,12 +245,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/a/$token': {
+      id: '/a/$token'
+      path: '/a/$token'
+      fullPath: '/a/$token'
+      preLoaderRoute: typeof ATokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AssessRoute: AssessRoute,
+  AssessmentRoute: AssessmentRoute,
   ItemsRoute: ItemsRoute,
   MethodologyRoute: MethodologyRoute,
   RecruiterRoute: RecruiterRoute,
@@ -225,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportRoute: ReportRoute,
   ResultsRoute: ResultsRoute,
   ReviewRoute: ReviewRoute,
+  ATokenRoute: ATokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

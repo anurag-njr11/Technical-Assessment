@@ -52,6 +52,12 @@ function fakeJudge(model: string, prompt: string) {
       proposes_fix: hit && /should|use |fix/.test(lc),
       evidence: hit ? (mode === "fabricate" ? "a quote the candidate never wrote" : kw) : "",
     }
+  } else if (prompt.includes("<transcript>")) {
+    // Trajectory question: a fair judge credits good behaviour and denies bad, quoting the final review event.
+    const last = between(prompt, "<transcript>", "</transcript>").split("\n").filter((l) => l.startsWith("[")).pop() ?? ""
+    const [, id = "", text = ""] = last.match(/^\[([^\]]+)\] (.*)$/) ?? []
+    const bad = /without checking|non-issue|This assumption is correct/.test(prompt.split("Question:")[1] ?? "")
+    answer = bad ? { decision: false, evidence: "", event_ids: [] } : { decision: true, evidence: text.split(/\s+/).slice(0, 4).join(" "), event_ids: [id] }
   } else if (prompt.includes("INTENTIONAL")) {
     const hit = lc.includes("cap")
     answer = { objects_to_behavior: hit, evidence: hit ? "cap" : "" }

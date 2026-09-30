@@ -38,6 +38,7 @@ describe("grading pipeline", () => {
     expect(r.components.verdict.value).toBe(1)
     expect(r.overall).toBeGreaterThan(0)
     expect(r.overall).toBeLessThanOrEqual(100)
+    expect(r.reviewReasons).toEqual([])
     expect(r.needsReview).toBe(false)
   })
 

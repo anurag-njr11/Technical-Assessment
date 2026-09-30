@@ -3,7 +3,8 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { DISC_12 } from "@/lib/scenario"
 import { interviewQuestions } from "@/lib/interview"
 
-vi.mock("convex/react", () => ({ useMutation: () => vi.fn(async () => undefined) }))
+const log = vi.fn(async () => undefined)
+vi.mock("convex/react", () => ({ useMutation: () => log, useAction: () => vi.fn(async () => undefined) }))
 
 describe("Directed Build workspace", () => {
   it("renders the ticket, editor, restored chat and lets the candidate insert a suggestion", async () => {
@@ -29,6 +30,20 @@ describe("Directed Build workspace", () => {
     fireEvent.click(screen.getByText("Insert into editor"))
     expect(setCode).toHaveBeenCalledWith(expect.stringContaining("const CODES = {}"))
     expect(screen.getByText("Inserted into the editor")).toBeInTheDocument()
+    for (const step of ["Task", "Code editor", "AI assistant", "Tests", "Submit"]) expect(screen.getByRole("heading", { name: new RegExp(step) })).toBeInTheDocument()
+  })
+
+  it("logs a code_edit snapshot after the candidate stops typing", async () => {
+    vi.useFakeTimers()
+    const { BuildWorkspace } = await import("@/components/build-workspace")
+    render(
+      <BuildWorkspace token="t" scenario={DISC_12} code="" setCode={() => {}} chat={[]} onSubmit={() => {}} submitting={false} error="" />,
+    )
+    fireEvent.change(screen.getByLabelText("Code editor"), { target: { value: "let x = 1" } })
+    expect(log).not.toHaveBeenCalledWith(expect.objectContaining({ type: "code_edit" }))
+    vi.advanceTimersByTime(3000)
+    expect(log).toHaveBeenCalledWith({ token: "t", type: "code_edit", data: "let x = 1" })
+    vi.useRealTimers()
   })
 })
 

@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { ArrowRight, ClipboardCheck, Scale, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Bot, FlaskConical, Link2, ListChecks } from 'lucide-react'
 import { TopBar } from '@/components/rb'
 import siteMetadata from '@/metadata.json'
 
@@ -15,82 +15,47 @@ export const Route = createFileRoute('/')({
 function Home() {
   return (
     <div className="min-h-screen bg-background">
-      <TopBar
-        right={
-          <>
-            <Link to="/methodology" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-              Methodology
-            </Link>
-            <Link to="/recruiter" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-              Recruiter dashboard
-            </Link>
-          </>
-        }
-      />
+      <TopBar />
 
       <main className="mx-auto max-w-5xl px-6 pb-24 pt-16">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Code Review · Decision Review · Directed Build
-        </p>
-        <h1 className="mt-4 max-w-3xl text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-          See how engineers review code an AI wrote.
+        <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+          ReviewBench doesn't ask whether you can write code without AI.
         </h1>
         <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-          Candidates review a pull request with planted, known flaws. A panel of independent AI judges grades each
-          comment against the answer key — and every vote must quote the candidate's own words.
+          It evaluates whether you can effectively work with AI to produce reliable engineering work.
         </p>
 
         <div className="mt-10 grid gap-4 md:grid-cols-2">
-          <Link
-            to="/assess"
-            search={{ t: '' }}
-            className="group flex flex-col justify-between rounded-xl border border-border bg-card p-6 transition-colors hover:border-foreground/30"
-          >
-            <div>
-              <div className="text-sm font-semibold">For candidates</div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight">Take the assessment</div>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Review AI-written code, critique an AI's architecture decision, or build with an AI assistant. 20–40
-                minutes per part. Open the personal link from your invitation email to begin.
-              </p>
-            </div>
-            <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold">
-              How it works <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-            </span>
-          </Link>
           <Link
             to="/recruiter"
             className="group flex flex-col justify-between rounded-xl border border-border bg-card p-6 transition-colors hover:border-foreground/30"
           >
             <div>
               <div className="text-sm font-semibold">For hiring teams</div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight">Review candidates</div>
+              <div className="mt-2 text-2xl font-semibold tracking-tight">Recruiter sign in</div>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Scores, issue-by-issue evidence, judge votes, and escalations.
+                Create an assessment, share one link or QR code, and see exactly how each candidate worked with AI.
               </p>
             </div>
             <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold">
-              Open dashboard <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              Sign in <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </span>
           </Link>
+          <div className="flex flex-col rounded-xl border border-dashed border-border bg-card p-6">
+            <div className="text-sm font-semibold">For candidates</div>
+            <div className="mt-2 flex items-center gap-2 text-2xl font-semibold tracking-tight">
+              <Link2 className="size-5" /> Have an assessment link?
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Open the link or scan the QR code the hiring team gave you. There's nothing to sign up for.
+            </p>
+          </div>
         </div>
 
         <div className="mt-16 grid gap-8 border-t border-border pt-10 md:grid-cols-3">
-          <Feature
-            icon={<ClipboardCheck className="size-5" />}
-            title="Known answer key"
-            body="Every candidate sees the same planted issues and decoys, so results are comparable."
-          />
-          <Feature
-            icon={<Scale className="size-5" />}
-            title="Checklist council"
-            body="Three judges from different model families answer narrow yes/no questions. Splits on serious items escalate to a human."
-          />
-          <Feature
-            icon={<ShieldCheck className="size-5" />}
-            title="Evidence-verified"
-            body="A judge's vote only counts if the quote it cites actually appears in the candidate's comment."
-          />
+          <Feature icon={<ListChecks className="size-5" />} title="A real task" body="A short, realistic engineering task, not a puzzle." />
+          <Feature icon={<Bot className="size-5" />} title="An AI assistant" body="Candidates use AI the way they would at work: ask, accept, dismiss, edit." />
+          <Feature icon={<FlaskConical className="size-5" />} title="Reliable results" body="What matters is whether the final work is correct, and how they got there." />
         </div>
       </main>
     </div>

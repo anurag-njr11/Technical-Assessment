@@ -1,10 +1,12 @@
 # ReviewBench — Product & Technical Specification
 
-> **Status:** Living spec · v0.5 · 30 Sep 2026 (P1–P6 website functionality implemented at demo/pilot depth; deferred work in `LATER.md`; see Progress Report)
+> **Status:** Living spec · v0.6 · 30 Sep 2026 (AI-native assessment flow: recruiter assessments with link/QR, AI PR review with an interactive agent, live Directed Build assistant, trajectory judge council, evidence-first recruiter views. P1–P6 at demo/pilot depth; deferred work in `LATER.md`; see Progress Report)
 > **Purpose:** Single source of truth for spec-driven development. Every feature, rule, and threshold the system implements should trace back to a requirement ID in this document (`FR-`, `NFR-`, `GR-`, `AC-`, etc.). When the code and this spec disagree, one of them is a bug — fix whichever is wrong and update the other.
 > **Companion document:** *ReviewBench — Progress Report* (what is built vs. remaining, keyed to the IDs below).
 
 > **Implementation note (v0.5).** Requirements marked *(Planned)* below that are now built: SCR-1, SCR-2 (reported, not yet weighted), SCR-3 (Rasch/1PL), SCR-5, TR-2, TR-4, TR-5, TR-6 (summary page), FR-R-16, FR-R-17 (print to PDF), SB-3, SB-4, CU-1, CU-2, CU-3, CU-6, CU-7, CU-8/FB-6, FB-3, EX-5, KA-1/KA-2 (lexical retrieval behind `RAG_EXAMPLES=on`), CO-1/CO-3 (audit pack export, notice template), M2 Decision Review, M3 Directed Build (pilot: scripted assistant, server-side trajectory, signature-based fault checks). Still deferred: SEC-4 SSO, multi-tenancy, ATS webhooks, KA-5–7 fine-tuning, EX-3 shadow mode, SB-1/SB-2 generated scenarios, CU-4/CU-5, SC-7 variants, SCR-4 equating.
+
+> **Implementation note (v0.6).** New in this version and built: recruiter **assessments** with a reusable link and QR code (§15.6, FR-R-20–27); the flagship **AI PR review with the agent** (§7.4, PR-1–5, FR-C-19–24); a **live LLM assistant** for M3 with planted faults still scripted (§7.3, AS-1–6); the **trajectory council** (§10.8, TJ-1–12) and trajectory dimensions (§11.4); and **evidence-first** recruiter views with candidate comparison (§15.6). The product framing is now: *ReviewBench doesn't ask whether you can write code without AI. It evaluates whether you can effectively work with AI to produce reliable engineering work.*
 
 ---
 
@@ -45,17 +47,27 @@
 
 ## 1. Overview
 
-**ReviewBench** is a technical assessment platform that measures how well software engineers work with AI-generated code. Instead of asking candidates to write code from scratch, it asks them to **review, direct, and validate AI output** — the skills that increasingly define engineering work.
+**ReviewBench** is a technical assessment platform that measures how well software engineers work with AI. It doesn't ask whether you can write code without AI; it evaluates whether you can **evaluate, challenge, verify, and direct AI-generated engineering work** to produce reliable results.
+
+The core flow:
+
+```
+Recruiter    Sign in → pick role + module → Create assessment → link / QR code
+Candidate    Open link → Start → review the AI's PR + rationale and question the agent
+             (or build with the AI assistant) → test / verify → Submit
+ReviewBench  Record the trajectory → judge council → evidence verification → deterministic scoring
+Recruiter    Candidates per assessment → compare → evidence-first report → human review
+```
 
 The core mechanism:
 
-1. The candidate reviews an artifact produced by an "AI agent" (a pull request, an architecture decision, or a live AI session).
+1. The candidate works with an artifact produced by an "AI agent" (a pull request with the agent's rationale and assumptions, an architecture decision, or a live AI session) and can interrogate the agent. Every prompt, response and decision is recorded as a **trajectory**.
 2. The artifact contains **planted, known flaws** and **decoys** (suspicious-looking but correct code), defined in a hidden **answer key**.
 3. A **council of three independent AI judges** from different model families answers narrow yes/no checklist questions about each candidate comment.
 4. Every positive judge vote must **quote the candidate's own words**; fabricated evidence is discarded in code.
 5. **Deterministic code** — not an LLM — computes the final score from verified outcomes.
 6. Disagreements on serious items **escalate to a human**.
-7. Hiring teams receive an **evidence-backed report** showing exactly why each score was given.
+7. Hiring teams receive an **evidence-backed report** showing exactly why each score was given: dimension scores, judge findings with quoted evidence, judge disagreements, and the full candidate–AI interaction.
 
 ---
 
@@ -100,6 +112,8 @@ Standardize the evidence (every candidate sees the same planted flaws), decompos
 | G-5 | Measure and continuously prove the evaluator's **reliability and fairness**. |
 | G-6 | Let companies **customize** assessments to role, level, and stack within validated guardrails. |
 | G-7 | Keep candidate tasks **short** (≤ 45 minutes per module). |
+| G-8 | Measure **how** candidates work with AI (verification, challenge, trust calibration, instruction quality, efficiency), not only which planted bugs they find. |
+| G-9 | Keep the candidate surface free of evaluation machinery: no judges, scores, planted issues or answer keys are visible to candidates. |
 
 ### 3.2 Non-goals (current phase)
 
@@ -127,8 +141,8 @@ Standardize the evidence (every candidate sees the same planted flaws), decompos
 
 | Persona | Needs | Primary surfaces |
 |---|---|---|
-| **Candidate** | Clear task, fair evaluation, no account friction, feedback | `/assess` |
-| **Recruiter** | Fast triage, trustworthy scores, clear escalations | `/recruiter`, `/report` |
+| **Candidate** | Clear task, fair evaluation, no account friction, feedback | `/a/$token` (assessment link), `/assess` |
+| **Recruiter** | Create assessments, fast triage, compare candidates, trustworthy scores, clear escalations | `/recruiter`, `/assessment`, `/report` |
 | **Hiring manager** | Evidence of judgment, interview guidance | `/report` |
 | **Workspace owner** | Control who sees results; manage team | Team panel |
 | **Assessment designer** (future) | Build and calibrate scenarios | Scenario builder |
@@ -155,6 +169,11 @@ Standardize the evidence (every candidate sees the same planted flaws), decompos
 | **Band** | Human-readable score category (Strong / Meets bar / Borderline / Below bar). |
 | **Golden set** | Human-graded submissions used to measure judge accuracy. |
 | **Perturbation test** | Re-grading after an irrelevant change (name swap, formatting) to detect bias. |
+| **Assessment** | A recruiter-created configuration (role, module, level, time limit, AI-assisted) with one reusable link / QR code. Each person who opens it becomes a candidate with their own token. |
+| **Agent notes** | The AI agent's decision rationale and stated assumptions shown alongside an AI PR. Some assumptions are deliberately wrong and map to answer-key items. |
+| **Trajectory** | The recorded sequence of candidate–AI events: prompts, AI responses (with token usage), accept/dismiss, manual code edits, test runs. |
+| **Trajectory council** | The three-judge panel answering yes/no questions about a trajectory, citing event IDs as evidence (§10.8). |
+| **Dimension** | One of nine reported evaluation dimensions (§11.4), each 0–100 with the signals behind it. |
 
 ---
 
@@ -171,6 +190,7 @@ Standardize the evidence (every candidate sees the same planted flaws), decompos
 | DP-7 | **Candidate content is untrusted data.** | Delimited in prompts; injection attempts earn nothing. |
 | DP-8 | **Simple surface, rigorous core.** | Candidate UI stays minimal; complexity lives in calibration and grading. |
 | DP-9 | **Humans decide.** | The system recommends and explains; it never auto-rejects. |
+| DP-10 | **Quality over quantity of AI use.** | Never reward fewer tokens or more questions per se; efficiency is outcomes per token (§11.4). |
 
 ---
 
@@ -182,7 +202,9 @@ The platform is three modules sharing one evaluation engine. Each module covers 
 |---|---|---|---|---|
 | **M1 · Code Review** | Validate | Review an AI-written PR with planted bugs | Junior–Mid | 25–40 min |
 | **M2 · Decision Review** | Validate (judgment) | Critique an AI-written architecture decision (ADR) with planted reasoning flaws | Mid–Staff | 15–25 min |
-| **M3 · Directed Build** | Direct & collaborate | Build a feature with a live AI assistant whose responses contain scripted faults | All | 40–60 min |
+| **M3 · Directed Build** | Direct & collaborate | Build a feature with a live AI assistant whose responses contain scripted faults | All | 30–60 min |
+
+**Flagship (v0.6):** M1 is delivered as **AI PR review with the agent** (§7.4): the PR plus the agent's rationale and assumptions, and a chat to challenge the agent. M2 and M3 remain available.
 
 Companies assemble **batteries** per role (e.g., Junior Backend = M1 short + M2 short). Total candidate time per battery: ≤ 60 minutes (NFR-UX-1).
 
@@ -201,12 +223,39 @@ Companies assemble **batteries** per role (e.g., Junior Backend = M1 short + M2 
 
 ### 7.3 M3 · Directed Build
 
-- Candidate completes a ticket in a browser IDE using an AI assistant routed through a **ReviewBench proxy**.
-- The proxy applies **scripted mutations** to AI responses when they touch trigger files/functions (e.g., flip `<=` to `<`, swap a real helper for a nonexistent one). Every candidate faces identical faults.
+- Candidate completes a ticket in a browser workspace laid out as **Task → Code editor → AI assistant → Tests → Submit**, using an AI assistant routed through a **ReviewBench proxy** (`builds.ask`).
+- The assistant is a **live LLM** (`ASSISTANT_MODEL`); prompts that match a scripted fault intent receive the scripted faulty reply instead, so every candidate faces identical faults (AS-1–6). Without an LLM key the assistant is fully scripted.
 - ~70–80% of AI responses remain correct; ~20–30% carry planted faults, so the test rewards **calibrated trust**, not blanket distrust.
 - Full session recorded as a **trajectory** (see §10.7).
 - Scored on: faults caught (deterministic, via hidden tests/signatures), how they were caught (council), quality of instructions given to the AI, delegation judgment.
 - Unexposed faults (candidate never asked the AI about that area) are marked **not exposed** and excluded, not penalized.
+- Scenarios: `disc-12-build` (DISC-12 discount codes: `>= 50` threshold, hallucinated `cart.getSubtotalAfterTax()`, case-sensitive codes) and `orders-api-build` (ORD-519 order search, Backend Mid, 35 min: F1 SQL injection, F2 missing ownership filter, F3 hallucinated `db.queryParams()`, F4 no `LIMIT`).
+- Visible tests cover only what the ticket states. They never test a planted fault the ticket does not describe (e.g., ownership or injection in ORD-519), because spotting it is the assessment.
+
+| ID | Requirement |
+|---|---|
+| AS-1 | The assistant runs server-side as an action; the candidate's name and email are never sent to the model. |
+| AS-2 | Planted faults are deterministic: scripted intents with a fault return the scripted faulty code and record `fault_injected`. |
+| AS-3 | Any model failure (or no key) falls back to the scripted reply; the candidate never sees a grading-related error. |
+| AS-4 | Every `ai_response` records token usage (`usage` from the provider, or chars/4 on fallback). |
+| AS-5 | Per-candidate limits: 120 asks/hour, 2,000-char prompts, 400 events, 800 KB of events. |
+| AS-6 | Manual edits are recorded as `code_edit` snapshots (≤ 4,000 chars) after 3 s of idle typing. |
+
+### 7.4 AI PR review with the agent (flagship)
+
+- The candidate sees an AI-generated PR (code scenarios `pay-217-mid`, `ord-482-junior`) plus **"The AI agent's notes"**: its decision rationale and a list of stated assumptions.
+- Some assumptions are deliberately wrong (e.g., "gateway.refund() is the SDK's refund method", "callers are already authorized upstream", "logging the full card number is fine because logs are internal"); the last one in each scenario is correct and maps to the decoy.
+- The candidate can **question the agent** in an "Ask the agent" chat. The model role-plays the PR's author: it defends its choices plausibly, concedes only to a concrete and correct technical challenge, and never volunteers its own flaws.
+- The candidate then leaves line comments, chooses approve / request changes, and answers the follow-ups, as in M1.
+- Graded twice: the M1 council for issue detection (§10.2–10.6), and the trajectory council for how they worked with the agent (§10.8).
+
+| ID | Requirement |
+|---|---|
+| PR-1 | Candidate-visible `rationale` and `assumptions[]` live in the public scenario; the mapping of each assumption to an answer-key item (`ASSUMPTION_KEYS`: `{ flawed, itemId }`) is server-only. |
+| PR-2 | Each flawed assumption maps to a planted issue; each sound assumption maps to a decoy (enforced by test). |
+| PR-3 | Each assumption has a "Question this" action that pre-fills the chat. |
+| PR-4 | Chat events are stored in the autosave draft and copied to `submission.build.events` (`code: ""`) on submit and auto-close. |
+| PR-5 | No fault injection in PR review: the flaws are already in the PR and the notes. |
 
 ---
 
@@ -338,6 +387,12 @@ Expected verdict: **request changes**. Total detection weight: 12.
 | FR-C-16 | Accessibility accommodations (extended time, 0–120 min) configurable per candidate. |
 | FR-C-17 | *(Planned)* Candidate-facing results summary and appeal request (see §17). |
 | FR-C-18 | Server limits: ≤ 40 comments, ≤ 10 follow-up answers, text ≤ 4,000 chars. |
+| FR-C-19 | Candidates can enter through a recruiter's **assessment link or QR code** (`/a/$token`): role, title, time limit, whether an AI assistant is provided, name (+ optional email), Start. |
+| FR-C-20 | Joining creates the candidate's own record and single-use token; the page remembers it (per assessment token) so a refresh resumes rather than re-joins. Closed or unknown links show a plain message. |
+| FR-C-21 | The candidate's time limit is the assessment's `minutes` (10–90) when they joined through an assessment. |
+| FR-C-22 | Candidate-facing copy never mentions judges, scoring, planted issues, answer keys, trajectories or module codes (M1/M2/M3). Modules are shown as "Code review", "Design review" and "Build with AI". |
+| FR-C-23 | The candidate is told that the AI chat is shared with the hiring team. |
+| FR-C-24 | The candidate flow has no path to recruiter pages; the done screen has no navigation back into the site. |
 
 ---
 
@@ -443,7 +498,41 @@ type TrajectoryEvent = {
 }
 ```
 
-Deterministic signals derived from trajectories: hidden-test pass rates per planted fault, whether fault signatures remain in final code, tests written, AI code survival rate, lint/static analysis findings. LLM judges cite **event IDs** as evidence; verification checks the event exists and contains the claimed content.
+As implemented (`buildEventValidator`):
+
+```ts
+type TrajectoryEvent = {
+  id: string                           // "e0", "e1", ...
+  t: number                            // ms since session start
+  type: "ai_prompt" | "ai_response" | "fault_injected" | "accept_suggestion"
+      | "reject_suggestion" | "test_run" | "file_open" | "code_edit"
+  data?: string                        // prompt text; response JSON {text, code};
+                                       // "F1|<responseId>"; accepted response id;
+                                       // code snapshot; test summary
+  tokens?: { input: number; output: number }   // ai_response only
+}
+```
+
+Used for both M3 builds and AI PR review chats (`code: ""`). Deterministic signals derived from trajectories: whether fault signatures remain in final code, test runs, correct suggestions used, scenario-specific completion. LLM judges cite **event IDs** as evidence; verification checks the event exists and contains the claimed content (§10.8).
+
+### 10.8 Trajectory council
+
+Runs for M3 builds and for code reviews whose submission has chat events. Implemented in `convex/trajectory.ts` (`gradeTrajectory`).
+
+| ID | Rule |
+|---|---|
+| TJ-1 | The trajectory is rendered as a numbered, **redacted** transcript (names and emails removed) with event IDs; long code is truncated. A pseudo-event `final` holds the final code (build) or verdict and comments (review). |
+| TJ-2 | `fault_injected` events are never shown as transcript events; judges get a grader-only header listing planted defects and assumptions marked wrong/correct. |
+| TJ-3 | Each judge answers narrow yes/no questions with JSON `{ decision, evidence, event_ids }`. |
+| TJ-4 | Questions: per exposed planted fault (F*n*) "did the candidate notice or question this problem?"; per flawed assumption (A*n*) "did the candidate challenge it with a correct technical reason?"; per sound assumption "did they reject it without basis?"; behaviour questions B1–B11 (verified AI code before accepting, challenged the AI when wrong, blindly accepted faulty output, gave specific instructions, tested, took over manually when appropriate (builds only), flagged a non-issue, recognised security/performance/design problems, asked for justification, prompts purposeful vs. redundant, …). |
+| TJ-5 | A vote is **invalid** if it cites an event ID not in the transcript, or its quote is not found in the cited events; invalid votes are kept with `discardedReason`. |
+| TJ-6 | Consensus = majority of valid votes with ≥ 2 valid. `agreement` = "yes/valid"; confidence **high** if unanimous with ≥ 3 valid, **medium** if 2/3, else **low**. |
+| TJ-7 | A finding **needs review** when votes split or fewer than 2 are valid; each adds a specific reason to `reviewReasons`. |
+| TJ-8 | Planted-fault outcomes (F*n*) stay deterministic (fault signature present in final code → missed); judges add *how* it was caught. |
+| TJ-9 | Finding kinds: `detected`, `missed`, `false_positive`, `behavior`. Finding IDs: `F<n>` planted faults, `A<n>` assumptions (1-based, scenario order), `B<n>` behaviour. |
+| TJ-10 | If every judge fails, the deterministic grade stands, findings keep deterministic outcomes, and the reason "AI judges were unavailable" is added. Grading never throws for this. |
+| TJ-11 | Every trajectory judge call is traced like M1 calls (EX-2); `callCount` and `modelsUsed` include them. |
+| TJ-12 | For code reviews, the M1 result is kept intact (items, votes, overrides) and the trajectory is attached as `result.trajectory`. |
 
 ---
 
@@ -485,6 +574,28 @@ Edge cases: no comments → precision 0; comments but none valid or false → pr
 | SCR-3 | Replace raw percentage with an **IRT ability estimate** and standard error; report as a score band with confidence interval. |
 | SCR-4 | Enable test equating across scenario variants. |
 | SCR-5 | Local norms: percentile vs. the company's own engineers. |
+
+### 11.4 Trajectory dimensions (v0.6)
+
+Reported on every trajectory-graded result as `result.trajectory.dimensions`, each 0–100 with a `detail` string listing the signals behind it. A dimension with no usable signal is omitted (e.g., challengeAssumptions for builds).
+
+| Key | Label | Signals (deterministic + judged) |
+|---|---|---|
+| issueDetection | Issue detection | Detection component (M1 or build faults); F-findings |
+| engineeringJudgment | Technical/engineering judgment | Verdict or completion; decoys left alone; judged design/security/performance recognition |
+| reasoning | Reasoning & evidence-seeking | Judged: asked for justification, verified claims |
+| trustCalibration | AI trust calibration | Correct suggestions used; judged: blind acceptance (negative), challenged when wrong |
+| promptQuality | Prompt quality | Prompt-specificity heuristic; judged: specific instructions |
+| interactionQuality | AI interaction quality | Judged: useful questions, purposeful prompts |
+| verification | Verification/validation | Test runs (build) or follow-up answer quality (review); judged: verified before accepting |
+| efficiency | Token usage & efficiency | `min(1, outcomes × 4000 / tokens)`; outcomes = issues found + flawed assumptions correctly challenged; falls back to outcomes per prompt without token data; **zero outcomes scores 0**. Detail starts with raw totals (tokens in/out, prompts). |
+| challengeAssumptions | Challenging incorrect AI assumptions | A-findings (flawed assumptions challenged; sound ones not rejected) |
+
+The exact signal-to-dimension mapping is documented in a comment in `convex/trajectory.ts`.
+
+**Overall (judged runs):** `overall = round(0.5 × base.overall + 0.5 × mean(dimensions except issueDetection))`, where `base` is the M1 score (review) or the deterministic build grade (M3). The band is recomputed. When every judge failed, the base overall stands. Human overrides (§15.4) recompute the base and re-apply the same blend (`blendOverall` in `convex/scoring.ts`).
+
+> ⚠️ The 50/50 blend and the efficiency constant (4000 tokens per outcome) are provisional and must be calibrated with the golden set before hiring use (AC-REL-1).
 
 ---
 
@@ -575,6 +686,8 @@ Edge cases: no comments → precision 0; comments but none valid or false → pr
 | FR-R-18 | Owner sees members and pending invites; can invite by email, revoke invites, remove members. |
 | FR-R-19 | Non-owners see the member list only. |
 
+> The team panel and single-use candidate invites now sit in a collapsed section at the bottom of the dashboard; assessments (§15.6) are the primary way to invite candidates.
+
 ### 15.4 Human review queue
 
 | ID | Requirement |
@@ -592,6 +705,21 @@ Edge cases: no comments → precision 0; comments but none valid or false → pr
 | SB-2 | LLM generates a clean artifact; scripted mutations insert issues from the library; human verifies. |
 | SB-3 | Show per-item detection rate and calibrated difficulty. |
 | SB-4 | Enable/disable items within validated guardrails. |
+
+### 15.6 Assessments, candidate comparison and evidence-first reports (v0.6)
+
+| ID | Requirement |
+|---|---|
+| FR-R-20 | The dashboard leads with **Create assessment**: role (AI Engineer, Software Engineer, Backend Engineer, ML Engineer, Full-Stack Engineer), module, level (Junior/Mid/Senior), time limit (10–90 min), AI-assisted (code review and build modules; not decision review). Default module: `pay-217-mid`. |
+| FR-R-21 | Creating an assessment returns a reusable link `/a/<token>` (192-bit token), shown with a copy button and a **QR code**. |
+| FR-R-22 | Assessments list: title, role, level, time, joined / in progress / submitted counts, average score, status; recruiters can close and reopen an assessment. |
+| FR-R-23 | Assessment page (`/assessment?id=`): a sortable table of **all candidates** with Overall, Technical/engineering judgment, AI verification (trustCalibration), Issue detection, Prompt quality, AI interaction quality, Token usage/efficiency (score + total tokens), Time taken, Testing/validation (verification), Final outcome (band, verdict, review status). Unscored rows sort last. |
+| FR-R-24 | **Candidate comparison:** select 2–4 candidates for a side-by-side view across the same dimensions, with the best value per row highlighted and links to each report. |
+| FR-R-25 | Report, when `result.trajectory` exists: overall score and dimension table first; then judge evidence cards (title, candidate evidence quote, "Judges: k/n agree", confidence, "Human review recommended"); a **Judge disagreements** section with per-judge Yes/No; findings grouped as Detected issues / Missed issues / False positives / Other behaviours. |
+| FR-R-26 | Each evidence card's event IDs link to the matching event in the **interaction timeline** (prompt → AI response with code and tokens → accepted/dismissed → edits → test runs → final submission). Responses carrying a planted fault are marked for the recruiter only. |
+| FR-R-27 | For AI PR review, the report shows the AI's PR, rationale and numbered assumptions (A1…An), marking the ones the candidate challenged. |
+
+The recruiter should be able to answer *"Why did ReviewBench give this candidate this score?"* in a few clicks.
 
 ---
 
@@ -634,7 +762,8 @@ Edge cases: no comments → precision 0; comments but none valid or false → pr
 | SEC-12 | The public submit endpoint returns nothing (no IDs usable to look up results). |
 | SEC-13 | Candidate content is treated as untrusted in all prompts. |
 | SEC-14 | Secrets (deploy keys, API tokens) never committed to source repositories. |
-| SEC-15 | Rate limiting (global hourly caps on starts and submissions, per-candidate draft-save cap) and single-use invites on the public endpoints. |
+| SEC-15 | Rate limiting (global hourly caps on starts and submissions, per-candidate draft-save cap, 200 joins/hour per assessment link, per-candidate assistant and event-log caps) and single-use candidate tokens on the public endpoints. |
+| SEC-18 | Public assessment endpoints (`assessments.publicInfo`, `assessments.join`) expose only title, role, level, minutes, AI-assisted and open state, never scenario or answer data. |
 | SEC-16 | *(Planned)* Candidate data never sent to model providers that train on inputs. |
 | SEC-17 | *(Planned)* Data retention policy and candidate data deletion on request. |
 
@@ -707,13 +836,19 @@ Legal liability for hiring decisions stays with the employer; ReviewBench suppli
 
 ```
 Browser (TanStack Start, React, Tailwind)
-  ├─ /            landing
-  ├─ /assess      candidate flow  ──── submit (public mutation)
-  ├─ /recruiter   dashboard       ──┐
-  └─ /report      report          ──┴── protected queries (requireRecruiter)
+  ├─ /             landing
+  ├─ /a/$token     assessment link ── assessments.publicInfo / join (public)
+  ├─ /assess       candidate flow  ── builds.ask (action → assistant LLM), builds.log,
+  │                                   saveDraft, submit (public, token-scoped)
+  ├─ /recruiter    dashboard       ──┐
+  ├─ /assessment   candidates + compare
+  └─ /report       evidence report ──┴── protected queries (requireRecruiter)
                                           │
 Convex (database, functions, auth, scheduler)
+  ├─ builds.ask ──► prepareAsk (validate, redact) ──► ASSISTANT_MODEL ──► recordAsk
   ├─ submissions.submit ──► scheduler ──► grading.grade (action)
+  │                                          ├─ M1/M2 checklist council
+  │                                          └─ trajectory council (M3, PR-review chat)
   │                                          │
   │                          ┌───────────────┼───────────────┐
   │                       Judge A          Judge B         Judge C
@@ -807,9 +942,45 @@ type Result = {
 
 > The `result` and `machineResult` fields are validated by `resultValidator` (NFR-DATA-1). `machineResult` is the untouched council output; `result` has human overrides applied.
 
-### 22.5 Planned tables
+`result.trajectory` (v0.6, optional):
 
-`candidates` (invite tokens, accommodations), `scenarios` (versioned content), `answerKeys` (versioned, server-only), `reviews` (human overrides), `goldenLabels`, `experiments`, `workspaces` (multi-tenancy), `autosaves`.
+```ts
+trajectory?: {
+  dimensions: Array<{ key: string; label: string; score: number; detail: string }>
+  findings: Array<{
+    id: string                // "F1", "A2", "B7"
+    title: string
+    dimension: string
+    kind: "detected" | "missed" | "false_positive" | "behavior"
+    question: string
+    votes: Array<{ judge; model; family?; decision: boolean; evidence: string;
+                   eventIds: string[]; valid: boolean; discardedReason? }>
+    agreement: string         // "yes/valid", e.g. "3/3"
+    confidence: "high" | "medium" | "low"
+    needsReview: boolean
+  }>
+}
+```
+
+### 22.5 `assessments` (v0.6)
+
+| Field | Type | Notes |
+|---|---|---|
+| title | string | default `${role} · ${scenario title}`, ≤ 120 chars |
+| role | string | one of the five roles (FR-R-20) |
+| scenarioId | string | must exist in `SCENARIO_META` |
+| level | `"Junior" \| "Mid" \| "Senior"` | stored and shown; does not yet change scenario content |
+| minutes | number | 10–90; overrides the scenario time limit |
+| aiAssisted | boolean | stored and shown; not yet enforced by the candidate flow |
+| token | string | 48 hex chars; index `by_token` |
+| status | `"active" \| "closed"` | |
+| createdBy / createdAt | Id<"users"> / number | index `by_createdAt` |
+
+`candidates` gains optional `assessmentId` (index `by_assessment`). `submissions.build` (`{ code, events }`) is now also used for PR-review chats.
+
+### 22.6 Planned tables
+
+`scenarios` (versioned content), `answerKeys` (versioned, server-only), `workspaces` (multi-tenancy).
 
 ---
 
@@ -817,6 +988,14 @@ type Result = {
 
 | Function | Type | Auth | Purpose |
 |---|---|---|---|
+| `assessments.create` | mutation | recruiter | Create an assessment; returns `{ id, token }` |
+| `assessments.list` | query | recruiter | Assessments with counts and average score |
+| `assessments.get` | query | recruiter | Assessment + candidate rows (scores, dimensions, tokens, review status) |
+| `assessments.setStatus` | mutation | recruiter | Close / reopen |
+| `assessments.publicInfo` | query | public | Title, role, level, minutes, AI-assisted, open |
+| `assessments.join` | mutation | public (rate-limited) | Create a candidate from a link; returns `{ candidateToken }` |
+| `builds.ask` | action | candidate token | Assistant / PR-author reply; returns `{ id, text, code }` |
+| `builds.log` | mutation | candidate token | Record accept/reject, test runs, file opens, code edits |
 | `submissions.submit` | mutation | public | Validate and store a submission; schedule grading; returns `null` |
 | `submissions.list` | query | recruiter | Dashboard rows |
 | `submissions.get` | query | recruiter | Full submission + result |
@@ -845,7 +1024,7 @@ type Result = {
 | NFR-REL-2 | Grading failure | Status set to `error`; recruiter can retry |
 | NFR-SEC-1 | Server-side authorization for all protected data (SEC-10) |
 | NFR-DATA-1 | Schema validation for stored results |
-| NFR-COST-1 | Track LLM calls and cost per submission; MVP ≈ 12–20 calls per submission |
+| NFR-COST-1 | Track LLM calls and cost per submission; MVP ≈ 12–20 calls per submission. The trajectory council adds 3 judges × questions: 36 calls for a build with one exposed fault, more with more faults or assumptions. Assistant calls are one per candidate prompt. |
 | NFR-OBS-1 | Log and trace every judge call (`judgeCalls` table) |
 
 ---
@@ -859,6 +1038,8 @@ type Result = {
 | A | `google/gemini-3.6-flash` | `qwen/qwen3-235b-a22b-2507` (Alibaba) |
 | B | `anthropic/claude-sonnet-5` | `mistralai/mistral-large` (Mistral) |
 | C | `meta-llama/llama-3.3-70b-instruct` | `deepseek/deepseek-chat` (DeepSeek) |
+
+The **assistant** (M3 and the PR-review agent) uses `ASSISTANT_MODEL` (default `anthropic/claude-sonnet-5`) on the same endpoint; it is live only when `LLM_API_KEY` or `LLM_BASE_URL` is set.
 
 All six families are distinct (GR-7). The panel can be replaced without a code change through the `JUDGE_PANEL_JSON` environment variable, which is validated the same way. Fallback model IDs must be confirmed against the LLM endpoint's catalogue; an unavailable fallback simply counts as an unavailable judge and low quorum escalates.
 
@@ -894,7 +1075,10 @@ Cache by (submission hash, rubric version, model); batch checklist items per cal
 
 Access: anonymous blocked; first verified claim; second claim rejected; unverified claim rejected; non-member blocked; invite → accept → access; uninvited accept rejected; owner-only invite + email validation; member removal revokes access; owner not removable.
 Grading: reference scenario outcomes; perfect review → Strong; wrong verdict lowers score; fabricated evidence discarded; single usable judge → no credit + escalation; fallback model used on failure; injection comment earns nothing.
-Scenario: no answer-key imports in `src/`; no answer-key text in `src/`; key lines visible; hallucinated helper absent; decoy required by ticket.
+Scenario: no answer-key imports in `src/`; no answer-key text in `src/`; key lines visible; hallucinated helper absent; decoy required by ticket; every stated assumption has a server-side key.
+Assessments: create → public info → join → session with the assessment's time limit; closed links reject joins; input validation; recruiter-only management.
+Assistant: live model receives no candidate identity; faults stay deterministic; scripted fallback when the model is down; PR-author role-play records tokens and the chat reaches the submission.
+Trajectory council: unanimous → high confidence; split → review; vote citing a missing event or unverified quote → discarded; all judges down → deterministic fallback; correct challenge credited; low tokens without outcomes score 0 efficiency; human overrides keep the trajectory blend.
 
 ---
 
@@ -909,6 +1093,7 @@ Scenario: no answer-key imports in `src/`; no answer-key text in `src/`; key lin
 | **P4 · Modules** | Breadth | M2 Decision Review; M3 Directed Build with proxy + trajectories |
 | **P5 · Customization** | Company fit | Scenario builder; job analysis; local norms; outcome tracking; BYO code; IRT |
 | **P6 · Scale & compliance** | Enterprise | Multi-tenancy; SSO; ATS integrations; RAG + fine-tuned judge; compliance kit; technical manual |
+| **P7 · AI-native flow** | Core story for the presentation | Assessments + link/QR; AI PR review with the agent; live assistant; trajectory council + dimensions; evidence-first report; candidate comparison; simplified candidate UI |
 
 ---
 
@@ -937,6 +1122,9 @@ Scenario: no answer-key imports in `src/`; no answer-key text in `src/`; key lin
 5. Retention period for candidate submissions?
 6. Should candidates see their detailed report by default, or only on request?
 7. Which model providers meet the no-training-on-inputs requirement for production?
+8. What blend between the deterministic grade and the trajectory dimensions (today 50/50) best predicts human scores?
+9. What token budget per outcome should the efficiency dimension use (today 4000)?
+10. Should the assessment's level change scenario content (e.g., pick a Junior vs. Mid variant), or stay a label?
 
 ---
 

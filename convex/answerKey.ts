@@ -84,6 +84,14 @@ export const SCENARIO_META: Record<string, ScenarioMeta> = {
     minutes: 30,
     followUps: [],
   },
+  "orders-api-build": {
+    kind: "build",
+    title: "ORD-519 · Order search (Directed Build, Mid)",
+    version: 1,
+    level: "Mid",
+    minutes: 35,
+    followUps: [],
+  },
 }
 
 // CU-1 / CU-3: role-and-level batteries, each within the 60-minute cap.
@@ -91,6 +99,30 @@ export const BATTERIES: Record<string, { name: string; scenarioIds: string[] }> 
   "junior-backend": { name: "Junior Backend (Code Review + Decision Review)", scenarioIds: ["ord-482-junior", "adr-031-mid"] },
   "mid-backend": { name: "Mid Backend (Code Review + Decision Review)", scenarioIds: ["pay-217-mid", "adr-031-mid"] },
   "ai-collaboration": { name: "AI collaboration (Directed Build + Code Review)", scenarioIds: ["disc-12-build", "ord-482-junior"] },
+}
+
+/**
+ * Server-only: which of the agent's stated assumptions (src/lib/scenario.ts,
+ * same index order) are wrong, and the answer-key item each one hides.
+ * A test keeps the lengths in sync.
+ */
+export const ASSUMPTION_KEYS: Record<string, Array<{ flawed: boolean; itemId: string }>> = {
+  "ord-482-junior": [
+    { flawed: true, itemId: "I1" },
+    { flawed: true, itemId: "I2" },
+    { flawed: true, itemId: "I3" },
+    { flawed: true, itemId: "I4" },
+    { flawed: false, itemId: "D1" },
+  ],
+  "pay-217-mid": [
+    { flawed: true, itemId: "I3" },
+    { flawed: true, itemId: "I1" },
+    { flawed: true, itemId: "I5" },
+    { flawed: true, itemId: "I2" },
+    { flawed: true, itemId: "I4" },
+    { flawed: true, itemId: "I6" },
+    { flawed: false, itemId: "D1" },
+  ],
 }
 
 /** M2 answer-key items all refer to the single combined critique. */

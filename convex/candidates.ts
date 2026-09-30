@@ -15,7 +15,7 @@ import { insertSubmission, validateWork } from "./submissions"
 /** Submissions are accepted this long after the deadline (network slack). */
 export const GRACE_MS = 2 * 60 * 1000
 
-function newToken(): string {
+export function newToken(): string {
   const bytes = new Uint8Array(24)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
@@ -27,6 +27,12 @@ async function byToken(ctx: { db: QueryCtx["db"] }, token: string): Promise<Doc<
     .query("candidates")
     .withIndex("by_token", (q) => q.eq("token", token))
     .unique()
+}
+
+/** Time limit before accommodations: the assessment's if the candidate joined via one, else the scenario's. */
+async function baseMinutes(ctx: { db: QueryCtx["db"] }, c: Doc<"candidates">): Promise<number> {
+  const a = c.assessmentId ? await ctx.db.get(c.assessmentId) : null
+  return a?.minutes ?? SCENARIO_META[c.scenarioId].minutes
 }
 
 /** Throws unless the attempt behind `token` is in progress and within time. */
@@ -153,7 +159,7 @@ export const session = query({
       kind: meta.kind,
       groupToken: c.groupToken ?? null,
       status: c.status,
-      minutes: meta.minutes + c.extraMinutes,
+      minutes: (await baseMinutes(ctx, c)) + c.extraMinutes,
       extraMinutes: c.extraMinutes,
       deadline: c.deadline ?? null,
       graceMs: GRACE_MS,
@@ -186,7 +192,7 @@ export const start = mutation({
     if (c.status === "started") return { deadline: c.deadline! }
     const meta = SCENARIO_META[c.scenarioId]
     const startedAt = Date.now()
-    const deadline = startedAt + (meta.minutes + c.extraMinutes) * 60 * 1000
+    const deadline = startedAt + ((await baseMinutes(ctx, c)) + c.extraMinutes) * 60 * 1000
     await ctx.db.patch(c._id, { status: "started", startedAt, deadline })
     await ctx.db.insert("autosaves", {
       candidateId: c._id,
@@ -249,7 +255,10 @@ export const autoClose = internalMutation({
       comments: draft?.comments ?? [],
       answers: draft?.answers ?? [],
       autoSubmitted: true,
-      build: SCENARIO_META[c.scenarioId].kind === "build" ? { code: draft?.code ?? "", events: draft?.events ?? [] } : undefined,
+      build:
+        SCENARIO_META[c.scenarioId].kind === "build"
+          ? { code: draft?.code ?? "", events: draft?.events ?? [] }
+          : draft?.events?.length ? { code: "", events: draft.events } : undefined,
     })
   },
 })

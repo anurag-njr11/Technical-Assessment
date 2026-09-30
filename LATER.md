@@ -27,13 +27,26 @@ bridge/tagger are removed. Remaining:
 - [ ] Role / level / date filters on the dashboard once there are many scenarios (FR-R-5)
 
 ### P4 · Modules
-- [ ] M3 Directed Build: real browser IDE with a sandboxed runtime (Judge0/Docker),
-      hidden tests executed server-side, live LLM assistant behind the mutation proxy
-      (today: scripted assistant + signature checks + in-browser visible tests) (§7.3)
-- [ ] M3: council scoring of *how* faults were caught and of instruction quality
-      (today: deterministic heuristic) (§7.3)
+- [x] M3: live LLM assistant behind the proxy, with planted faults still scripted (P7, AS-1–6)
+- [x] M3: council scoring of *how* faults were caught and of instruction quality (P7, trajectory council §10.8)
+- [ ] M3 Directed Build: real browser IDE with a sandboxed runtime (Judge0/Docker) and
+      hidden tests executed server-side (today: signature checks + in-browser visible tests) (§7.3)
 - [ ] M3: human overrides of Directed Build items (today: resolve with a note only)
 - [ ] M2: more decision briefs; per-section judging instead of one combined critique
+
+### P7 · AI-native flow
+- [ ] Enforce the assessment's **AI-assisted** flag in the candidate flow: hide the agent chat / assistant when off (today it is a label only) (FR-R-20)
+- [ ] Decide whether the assessment **level** selects scenario content (Junior vs. Mid variants) or stays a label (§29.10)
+- [ ] Calibrate the 50/50 deterministic/judged blend and the efficiency constant (4000 tokens per outcome) against human-graded trajectories (§11.4, §29.8–9)
+- [ ] Human overrides of trajectory findings (today: overrides change M1 items; trajectory findings can only be resolved with a note)
+- [ ] Batch trajectory questions per judge call to cut cost once accuracy is measured (NFR-COST-1)
+- [ ] Measure and tune the PR-author agent (`AUTHOR_SYSTEM`) on pilot transcripts: concedes too early? volunteers flaws?; pin a model per scenario version for comparability (§7.4)
+- [ ] Stream assistant replies instead of waiting for the full response
+- [ ] Agent notes (rationale + assumptions) for ADR-031 so Decision Review can use the agent chat too
+- [ ] Email the assessment link / QR to candidates; per-candidate expiry on joined links
+- [ ] Dedupe joins across devices (today each join creates a new candidate; the same browser reuses its token)
+- [ ] Export the comparison view (CSV/PDF) for hiring committees
+- [ ] Filter the recruiter's assessment list by role and status once there are many
 
 ### P5 · Customization
 - [ ] Scenario builder: LLM generates a clean artifact, scripted mutations insert issues,
@@ -58,4 +71,6 @@ bridge/tagger are removed. Remaining:
 
 - [ ] Browser end-to-end tests (Playwright) of the recruiter pages against a live Convex dev deployment
 - [ ] Unit tests for the Directed Build worker-based visible test runner (browser only)
+- [ ] Browser end-to-end test of the P7 flow: create assessment → link → agent chat → submit → assessment page → compare → report
+- [ ] Live-model evaluation of the trajectory council (retest stability, perturbation, injection inside chat messages) (REL-3, REL-10, FB-2)
 - [ ] Real-model evaluation suite in CI (REL-10)

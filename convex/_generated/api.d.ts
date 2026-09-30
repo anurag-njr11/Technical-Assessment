@@ -11,6 +11,7 @@
 import type * as ResendOTP from "../ResendOTP.js";
 import type * as access from "../access.js";
 import type * as answerKey from "../answerKey.js";
+import type * as assessments from "../assessments.js";
 import type * as auth from "../auth.js";
 import type * as buildScenario from "../buildScenario.js";
 import type * as builds from "../builds.js";
@@ -30,6 +31,7 @@ import type * as reviews from "../reviews.js";
 import type * as scoring from "../scoring.js";
 import type * as submissions from "../submissions.js";
 import type * as tracing from "../tracing.js";
+import type * as trajectory from "../trajectory.js";
 
 import type {
   ApiFromModules,
@@ -41,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   ResendOTP: typeof ResendOTP;
   access: typeof access;
   answerKey: typeof answerKey;
+  assessments: typeof assessments;
   auth: typeof auth;
   buildScenario: typeof buildScenario;
   builds: typeof builds;
@@ -60,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   scoring: typeof scoring;
   submissions: typeof submissions;
   tracing: typeof tracing;
+  trajectory: typeof trajectory;
 }>;
 
 /**

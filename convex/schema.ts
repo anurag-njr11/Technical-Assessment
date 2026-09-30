@@ -56,8 +56,12 @@ export const buildEventValidator = v.object({
     v.literal("reject_suggestion"),
     v.literal("test_run"),
     v.literal("file_open"),
+    // Candidate edited the code by hand; data = truncated code snapshot.
+    v.literal("code_edit"),
   ),
   data: v.optional(v.string()),
+  // ai_response only: tokens spent on that exchange (efficiency dimension).
+  tokens: v.optional(v.object({ input: v.number(), output: v.number() })),
 })
 
 export const extraClassValidator = v.union(
@@ -133,6 +137,46 @@ export const extraCommentValidator = v.object({
 
 const componentValidator = v.object({ value: v.number(), detail: v.string() })
 
+// M3 trajectory council: LLM judges score the candidate's AI-collaboration
+// trajectory on fixed dimensions and cite the events behind each decision.
+export const trajectoryVoteValidator = v.object({
+  judge: v.string(),
+  model: v.string(),
+  family: v.optional(v.string()),
+  decision: v.boolean(),
+  evidence: v.string(),
+  eventIds: v.array(v.string()),
+  valid: v.boolean(),
+  discardedReason: v.optional(v.string()),
+})
+
+export const trajectoryValidator = v.object({
+  // keys: issueDetection, engineeringJudgment, reasoning, trustCalibration,
+  // promptQuality, interactionQuality, verification, efficiency,
+  // challengeAssumptions. score is 0-100.
+  dimensions: v.array(
+    v.object({ key: v.string(), label: v.string(), score: v.number(), detail: v.string() }),
+  ),
+  findings: v.array(
+    v.object({
+      id: v.string(),
+      title: v.string(),
+      dimension: v.string(),
+      kind: v.union(
+        v.literal("detected"),
+        v.literal("missed"),
+        v.literal("false_positive"),
+        v.literal("behavior"),
+      ),
+      question: v.string(),
+      votes: v.array(trajectoryVoteValidator),
+      agreement: v.string(), // e.g. "3/3"
+      confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+      needsReview: v.boolean(),
+    }),
+  ),
+})
+
 export const resultValidator = v.object({
   overall: v.number(),
   band: v.string(),
@@ -182,6 +226,7 @@ export const resultValidator = v.object({
   communication: v.optional(v.object({ value: v.number(), detail: v.string() })),
   ragExamples: v.optional(v.number()),
   configNote: v.optional(v.string()),
+  trajectory: v.optional(trajectoryValidator),
   // Set once a human override has been applied (HR-2/3).
   machine: v.optional(v.object({ overall: v.number(), band: v.string() })),
   overrideCount: v.optional(v.number()),
@@ -247,6 +292,23 @@ export default defineSchema({
     submittedAt: v.number(),
   }).index("by_submittedAt", ["submittedAt"]),
 
+  // A recruiter-created assessment: one reusable link / QR code per role config.
+  // Opening the link creates a `candidates` row (with its own token).
+  assessments: defineTable({
+    title: v.string(),
+    role: v.string(), // "AI Engineer", "Backend Engineer", ...
+    scenarioId: v.string(),
+    level: v.string(), // Junior | Mid | Senior
+    minutes: v.number(),
+    aiAssisted: v.boolean(),
+    token: v.string(),
+    status: v.union(v.literal("active"), v.literal("closed")),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_createdAt", ["createdAt"]),
+
   // FR-C-12: a recruiter-created candidate with a single-use invite token.
   candidates: defineTable({
     name: v.string(),
@@ -273,8 +335,10 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     deadline: v.optional(v.number()),
     submissionId: v.optional(v.id("submissions")),
+    assessmentId: v.optional(v.id("assessments")),
   })
     .index("by_token", ["token"])
+    .index("by_assessment", ["assessmentId"])
     .index("by_group", ["groupToken"])
     .index("by_createdAt", ["createdAt"]),
 

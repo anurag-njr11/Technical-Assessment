@@ -24,6 +24,9 @@ export type Scenario = {
   summary: string
   criteria: string[]
   files: ScenarioFile[]
+  /** The AI agent's own account of the PR, shown next to the diff. Some assumptions are wrong on purpose. */
+  rationale: string
+  assumptions: string[]
   followUps: string[]
 }
 
@@ -95,6 +98,15 @@ export const SCENARIO: Scenario = {
         { n: 6, kind: 'ctx', code: '    return datetime.fromisoformat(value)' },
       ],
     },
+  ],
+  rationale:
+    'I kept the existing handler and added the new parameters inline to keep the diff small. Dates go through the shared date helper, and per_page follows the cap in the ticket.',
+  assumptions: [
+    'utils.parse_date_safe() is the project’s date parser and returns None for invalid input.',
+    'Pages are 1-based, and offset = page * per_page gives the start of the requested page.',
+    'The dates are already sanitised by parse_date_safe(), so putting them into the SQL string is safe.',
+    'Checking the status code is enough to cover the new behaviour in tests.',
+    'The ticket asks for per_page to be capped at 100, so larger values are clamped silently.',
   ],
   followUps: [
     'What would you verify before approving any change that builds a database query from request parameters?',
@@ -197,6 +209,17 @@ export const PAY_217: Scenario = {
       ],
     },
   ],
+  rationale:
+    'I added the refund endpoint next to the payment routes, reusing the existing auth decorator and gateway client. Idempotency is handled by looking up the key before creating a refund.',
+  assumptions: [
+    'gateway.refund() is the SDK’s refund method.',
+    'Callers are already authorized upstream by @require_auth, so the handler does not need to check who owns the payment.',
+    'Logging the full card number is fine because our logs are internal.',
+    'Comparing the amount with payment.amount is enough to stop over-refunding.',
+    'The gateway is reliable, so the call does not need error handling around the commit.',
+    'The request body always has a valid positive amount, because the dashboard validates it.',
+    'Returning the existing refund for a repeated Idempotency-Key is what the ticket asks for.',
+  ],
   followUps: [
     'Which problem in this PR could cost the company money or trust soonest, and why?',
     'How would you test that refunds are safe to retry and never exceed the payment?',
@@ -279,6 +302,9 @@ export type BuildScenario = {
   summary: string
   criteria: string[]
   apiReference: string[]
+  /** Editor tab name and the function the visible tests call. */
+  fileName: string
+  entry: string
   starterCode: string
   followUps: string[]
 }
@@ -304,12 +330,45 @@ export const DISC_12: BuildScenario = {
     'cart = { subtotal: number, items: Array<{ sku: string, price: number, qty: number }> }',
     'cart.subtotal is already computed. The cart object has no methods.',
   ],
+  fileName: 'discount.js',
+  entry: 'applyDiscount',
   starterCode: `const CODES = {
   // TODO
 }
 
 export function applyDiscount(cart, code) {
   // TODO: return the new total
+}
+`,
+  followUps: [],
+}
+
+export const ORD_SEARCH: BuildScenario = {
+  kind: 'build',
+  id: 'orders-api-build',
+  ticketId: 'ORD-519',
+  title: 'Add order search to the Orders API',
+  role: 'Backend Engineer',
+  level: 'Mid',
+  stack: 'JavaScript / SQL',
+  minutes: 35,
+  summary:
+    'Implement searchOrders(db, userId, query), which returns the orders of the signed-in user whose description contains the search text. You have an AI assistant: use it however you like, but you are responsible for the code you submit.',
+  criteria: [
+    'Returns only orders that belong to userId',
+    'Matches query anywhere in the order description (SQL LIKE)',
+    'Newest orders first (created_at descending), at most 50 results',
+    'Safe for any search text, including quotes and SQL keywords',
+  ],
+  apiReference: [
+    'db.query(sql: string, params?: any[]): Promise<Row[]>, with ? placeholders bound in order',
+    'orders(id, user_id, description, status, total_cents, created_at): 4 million rows',
+    'db has no other methods.',
+  ],
+  fileName: 'orders.js',
+  entry: 'searchOrders',
+  starterCode: `export async function searchOrders(db, userId, query) {
+  // TODO: return the matching orders
 }
 `,
   followUps: [],
@@ -322,6 +381,7 @@ export const SCENARIOS: Record<string, AnyScenario> = {
   [PAY_217.id]: PAY_217,
   [ADR_031.id]: ADR_031,
   [DISC_12.id]: DISC_12,
+  [ORD_SEARCH.id]: ORD_SEARCH,
 }
 
 export const MODULE_LABEL: Record<AnyScenario['kind'], string> = {
