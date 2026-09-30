@@ -718,15 +718,15 @@ Convex (database, functions, auth, scheduler)
   │                          ┌───────────────┼───────────────┐
   │                       Judge A          Judge B         Judge C
   │                     (Gemini)          (Claude)        (Llama)
-  │                          └──────── Macaly LLM endpoint ─┘
+  │                          └── OpenAI-compatible endpoint ─┘
   ├─ access.*  (claim, invite, team)
-  └─ auth.*    (Password + emailed OTP via Macaly)
+  └─ auth.*    (Password + emailed OTP via Resend)
 ```
 
 - **Frontend:** TanStack Start, React, Tailwind CSS v4, lucide icons, IBM Plex fonts.
 - **Backend:** Convex (reactive DB, queries/mutations/actions, scheduler), Convex Auth.
-- **LLM access:** Macaly Cloud LLM endpoint (server-side only).
-- **Hosting:** Macaly Cloud (git repo, preview, production hosting).
+- **LLM access:** any OpenAI-compatible chat endpoint (`LLM_BASE_URL`, default OpenRouter), server-side only.
+- **Hosting:** any Node host for the frontend (Nitro output) + Convex (cloud or self-hosted).
 
 ### 21.2 Target production architecture
 
@@ -924,7 +924,7 @@ Scenario: no answer-key imports in `src/`; no answer-key text in `src/`; key lin
 | Public endpoint abuse / cost | Invite tokens, rate limits, caching |
 | Regulatory exposure | Compliance-by-design, human oversight, counsel review |
 | Incumbents copy planted faults | Moat = calibrated item bank + validity data + published trust record |
-| Platform lock-in (Macaly) | Isolate LLM and email calls behind adapters (`macaly.ts`, `ResendOTP.ts`) |
+| Platform lock-in | LLM calls use the standard OpenAI-compatible API (`judges.ts`); email via Resend (`ResendOTP.ts`) |
 
 ---
 

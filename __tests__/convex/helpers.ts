@@ -36,7 +36,7 @@ function between(s: string, a: string, b: string) {
 function fakeJudge(model: string, prompt: string) {
   const mode = modes[model] ?? "honest"
   if (mode === "down") return new Response("unavailable", { status: 503 })
-  if (mode === "garbage") return Response.json({ success: true, text: "I think it's fine!" })
+  if (mode === "garbage") return chat("I think it's fine!")
 
   const comment = between(prompt, "<candidate_comment", "</candidate_comment>")
   const lc = comment.toLowerCase()
@@ -63,15 +63,16 @@ function fakeJudge(model: string, prompt: string) {
       evidence: comment.split(/\s+/).slice(0, 3).join(" "),
     }
   }
-  return Response.json({ success: true, text: "```json\n" + JSON.stringify(answer) + "\n```" })
+  return chat("```json\n" + JSON.stringify(answer) + "\n```")
 }
+
+const chat = (content: string) => Response.json({ choices: [{ message: { content } }] })
 
 export function installFakeJudges() {
   for (const k of Object.keys(modes)) delete modes[k]
   prompts.length = 0
-  process.env.MACALY_API_TOKEN = "test-token"
-  process.env.MACALY_BASE_URL = "https://macaly.test"
-  process.env.MACALY_CHAT_ID = "test-chat"
+  process.env.LLM_BASE_URL = "https://llm.test/v1"
+  process.env.LLM_API_KEY = "test-key"
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_url: string, init: { body: string }) => {

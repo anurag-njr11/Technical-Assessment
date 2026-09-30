@@ -4,8 +4,6 @@
 // on the panel, so a failover can never collapse diversity. validatePanel()
 // enforces this at load time and in tests.
 
-import { callMacalyJson } from "./macaly"
-
 export const PROMPT_VERSION = "prompts-2026-09-30b"
 export const RUBRIC_VERSION = "rubric-m1-2026-09-30"
 
@@ -83,16 +81,29 @@ export type Trace = {
 
 export type Asker = (judge: Judge, prompt: string, stage: string) => Promise<JudgeAnswer>
 
+/**
+ * Any OpenAI-compatible chat endpoint: OpenRouter (default, serves every panel
+ * model with one key), Ollama (`http://localhost:11434/v1`), Groq, Together...
+ */
 async function callModel(ref: ModelRef, prompt: string): Promise<string> {
-  const res = await callMacalyJson("/api/client-app/llm-usage", {
-    model: ref.model,
-    temperature: 0,
-    messages: [
-      { role: "system", content: SYSTEM },
-      { role: "user", content: prompt },
-    ],
+  const baseUrl = (process.env.LLM_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "")
+  const key = process.env.LLM_API_KEY
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+    body: JSON.stringify({
+      model: ref.model,
+      temperature: 0,
+      messages: [
+        { role: "system", content: SYSTEM },
+        { role: "user", content: prompt },
+      ],
+    }),
   })
-  return String(res.text ?? "")
+  if (response.status === 402) throw new Error("AI credits are currently unavailable.")
+  if (!response.ok) throw new Error(`Model request failed (${response.status}).`)
+  const res = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  return String(res.choices?.[0]?.message?.content ?? "")
 }
 
 /**

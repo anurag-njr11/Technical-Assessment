@@ -37,28 +37,36 @@ the candidate's own words.
 | `src/components/build-workspace.tsx` | M3 Directed Build editor + assistant + visible tests |
 | `convex/builds.ts`, `convex/buildScenario.ts` | M3 assistant proxy (server-side), planted faults, grading |
 | `convex/items.ts`, `convex/insights.ts` | Item config + adverse-impact check; norms, IRT, outcomes, validity |
-| `LATER.md` | Deferred enhancements, incl. running without Macaly |
+| `LATER.md` | Deferred enhancements |
 
 ## Run locally
 ```bash
 npm install
-cp .env.example .env.local   # fill in your Convex deployment values
-npx convex dev               # in one terminal
-npm run dev                  # in another, then open http://localhost:3000
+npx convex dev               # one terminal; first run creates a deployment and .env.local
+                             # (no account needed: CONVEX_AGENT_MODE=anonymous npx convex dev)
+npm run dev                  # another terminal, then open http://localhost:3000
 npm test                     # 79 tests
 ```
 
-## Platform dependencies (read before self-hosting)
-This project was built on Macaly Cloud. Two pieces call Macaly services and
-must be replaced to run elsewhere:
-- `convex/macaly.ts` - the AI judge calls go through Macaly's LLM endpoint.
-  Swap `callMacalyJson` for direct calls to your model providers.
-- `convex/ResendOTP.ts` - verification emails are sent via Macaly's OTP
-  endpoint. Swap in Resend or another email provider.
+Convex Auth needs signing keys once per deployment: `npx @convex-dev/auth`
+(or set `JWT_PRIVATE_KEY`, `JWKS` and `SITE_URL` with `npx convex env set`).
 
-Required Convex environment variables on the Macaly setup: `MACALY_API_TOKEN`,
-`MACALY_BASE_URL`, `MACALY_CHAT_ID`, `OTP_ENDPOINT`, `CHAT_ID`, `APP_NAME`,
-`SECRET_KEY`, plus the standard Convex Auth keys (`JWT_PRIVATE_KEY`, `JWKS`).
+## External services
+No platform lock-in; both services are optional for local use.
+- **AI judges** (`convex/judges.ts`, `callModel`): any OpenAI-compatible chat
+  endpoint. Default is OpenRouter, which serves every model on the default
+  panel with one key. Without a key, grading still completes but every judge is
+  "unavailable" and submissions escalate to human review.
+- **Verification emails** (`convex/ResendOTP.ts`): Resend. Without a key, the
+  6-digit code is printed to the Convex logs (`npx convex logs`).
+
+Convex environment variables (`npx convex env set NAME value`):
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLM_API_KEY` | unset | API key for the judge endpoint |
+| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | Any OpenAI-compatible base URL, e.g. `http://localhost:11434/v1` for Ollama (then set `JUDGE_PANEL_JSON` to local models) |
+| `RESEND_API_KEY` | unset | Send verification codes by email |
+| `EMAIL_FROM` | `ReviewBench <onboarding@resend.dev>` | Sender address (must be a domain verified in Resend) |
 
 Optional Convex environment variables:
 | Variable | Default | Purpose |

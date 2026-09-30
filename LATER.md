@@ -3,27 +3,13 @@
 Work deliberately deferred so the website could be demo-ready. Each item names
 the spec requirement it completes. Tick items off as they land.
 
-## A. Run without Macaly (platform independence)
+## A. Platform independence (done)
 
-Macaly is only used for AI judge calls and verification emails; the app and
-Convex run anywhere. To remove the dependency:
+Macaly is no longer used: judges call any OpenAI-compatible endpoint
+(`LLM_BASE_URL`, default OpenRouter), emails go through Resend, and the Macaly
+bridge/tagger are removed. Remaining:
 
-- [ ] **Judge transport adapter.** Replace `callModel()` in `convex/judges.ts`
-      with a provider switch chosen by env var `LLM_PROVIDER`:
-  - [ ] `openrouter`: one `OPENROUTER_API_KEY`, same model names as today
-        (`https://openrouter.ai/api/v1/chat/completions`, OpenAI-compatible body)
-  - [ ] `direct`: per-provider keys (Google AI Studio, Anthropic, Groq/Together for Llama,
-        Mistral, DeepSeek, Alibaba) with a small request/response mapper each
-  - [ ] `ollama`: local models via `http://localhost:11434/api/chat` for free development
-  - [ ] Keep `macaly` as one option so the current deployment keeps working
-  - [ ] Unit test each mapper with a stubbed `fetch`
-- [ ] **Verification email.** Replace `convex/ResendOTP.ts`'s Macaly OTP endpoint
-      with Resend (`RESEND_API_KEY`) or SMTP; keep the 6-digit, 15-minute code.
-- [ ] **Remove Macaly-only UI/dev bits.** Make `<MacalyBridge>` in
-      `src/routes/__root.tsx` optional and drop `macalyTagger` / Macaly
-      `allowedHosts` from `vite.config.ts` when not on Macaly.
-- [ ] **Local Convex.** Document `npx convex dev` (cloud free tier) and the
-      open-source self-hosted Convex backend in the README.
+- [ ] **Per-provider direct keys** (Google, Anthropic, ...) if OpenRouter is not acceptable for data-handling reasons (SEC-16).
 - [ ] **Budget guard.** When the provider returns 402/quota errors, show a
       "grading paused: AI credits exhausted" banner instead of escalating every
       submission.
