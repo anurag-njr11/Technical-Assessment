@@ -25,14 +25,22 @@ export const queue = query({
     await requireRecruiter(ctx)
     const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)
     return rows
-      .filter((r) => r.status === "graded" && r.result?.needsReview && r.humanReview?.status !== "resolved")
+      .filter(
+        (r) =>
+          r.status === "graded" &&
+          ((r.result?.needsReview && r.humanReview?.status !== "resolved") || r.appeal?.status === "open"),
+      )
       .map((r) => ({
         _id: r._id,
         candidateName: r.candidateName,
         submittedAt: r.submittedAt,
         overall: r.result!.overall,
         band: r.result!.band,
-        reasons: r.result!.reviewReasons,
+        reasons: [
+          ...(r.appeal?.status === "open" ? [`Candidate appeal: "${r.appeal.text.slice(0, 160)}"`] : []),
+          ...(r.humanReview?.status === "resolved" ? [] : r.result!.reviewReasons),
+        ],
+        appeal: r.appeal?.status === "open",
         overrideCount: r.result!.overrideCount ?? 0,
       }))
   },
@@ -168,6 +176,8 @@ export const resolve = mutation({
     if (!sub || sub.status !== "graded") throw new Error("Only graded submissions can be resolved.")
     await ctx.db.patch(args.submissionId, {
       humanReview: { status: "resolved", by: await reviewerEmail(ctx, me.userId), at: Date.now(), note },
+      // TR-5: resolving also answers an open appeal; the note is shown to the candidate.
+      ...(sub.appeal?.status === "open" ? { appeal: { ...sub.appeal, status: "resolved" as const, response: note } } : {}),
     })
   },
 })

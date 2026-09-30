@@ -1,7 +1,8 @@
 import { v } from "convex/values"
-import { mutation, query } from "./_generated/server"
+import { internalQuery, mutation, query } from "./_generated/server"
 import { requireRecruiter } from "./access"
 import { outcomeValidator } from "./schema"
+import type { Doc } from "./_generated/dataModel"
 
 // REL-1 golden set: humans grade submissions independently of the council.
 // Each grader's labels for a submission replace their previous manual labels.
@@ -77,5 +78,25 @@ export const forSubmission = query({
         .filter((r) => r.grader === email && r.source === "manual")
         .map((r) => ({ targetId: r.targetId, outcome: r.outcome ?? null, explanation: r.explanation ?? null, overall: r.overall ?? null })),
     }
+  },
+})
+
+/** KA-1: human-graded comments used as few-shot calibration examples (RAG_EXAMPLES=on). */
+export const examplesInternal = internalQuery({
+  args: { scenarioId: v.string() },
+  handler: async (ctx, args) => {
+    const labels = await ctx.db.query("goldenLabels").take(2000)
+    const out: Array<{ itemId: string; text: string; identified: boolean }> = []
+    const cache = new Map<string, Doc<"submissions"> | null>()
+    for (const l of labels) {
+      if (!l.outcome || l.targetId === "__overall" || (l.outcome !== "found" && l.outcome !== "missed")) continue
+      if (!cache.has(l.submissionId)) cache.set(l.submissionId, await ctx.db.get(l.submissionId))
+      const sub = cache.get(l.submissionId)
+      if (!sub || sub.scenarioId !== args.scenarioId) continue
+      const text = (sub.machineResult ?? sub.result)?.items.find((i) => i.id === l.targetId)?.commentText
+      if (text) out.push({ itemId: l.targetId, text: text.slice(0, 400), identified: l.outcome === "found" })
+      if (out.length >= 200) break
+    }
+    return out
   },
 })
