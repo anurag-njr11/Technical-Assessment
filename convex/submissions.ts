@@ -251,11 +251,13 @@ export async function loadOverrides(ctx: { db: MutationCtx["db"] }, id: Id<"subm
 }
 
 export function effectiveResult(sub: Doc<"submissions">, machine: Result, overrides: Override[]): Result {
+  if (overrides.length === 0) return machine
   const key = ANSWER_KEYS[sub.scenarioId]
   return applyOverrides(machine, overrides, {
     comments: sub.comments,
     verdict: sub.verdict,
-    expectedVerdict: key.expectedVerdict,
+    // M3 builds have no answer key; their "verdict" slot is task completion.
+    expectedVerdict: key?.expectedVerdict ?? "none",
   })
 }
 

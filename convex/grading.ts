@@ -468,6 +468,11 @@ export const grade = internalAction({
   handler: async (ctx, args) => {
     const sub = await ctx.runQuery(internal.submissions.getInternal, { id: args.submissionId })
     if (!sub) return
+    if (SCENARIO_META[sub.scenarioId]?.kind === "build") {
+      const result = gradeBuild(sub.scenarioId, sub.build?.code ?? "", sub.build?.events ?? [])
+      await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
+      return
+    }
     const key = ANSWER_KEYS[sub.scenarioId]
     if (!key) {
       await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error: "Unknown scenario" })
@@ -476,11 +481,6 @@ export const grade = internalAction({
     const traces: Trace[] = []
     try {
       const meta = SCENARIO_META[sub.scenarioId]
-      if (meta?.kind === "build") {
-        const result = gradeBuild(sub.scenarioId, sub.build?.code ?? "", sub.build?.events ?? [])
-        await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
-        return
-      }
       const config = await ctx.runQuery(internal.items.configInternal, { scenarioId: sub.scenarioId })
       const examples = process.env.RAG_EXAMPLES === "on"
         ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId })

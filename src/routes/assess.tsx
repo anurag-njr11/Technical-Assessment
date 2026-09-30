@@ -1,19 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ArrowRight, Check, Clock, Info, Loader2, Lock, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import { SeverityChip, TopBar } from '@/components/rb'
-import { SCENARIO, SEVERITIES } from '@/lib/scenario'
-import type { Severity } from '@/lib/scenario'
+import { MODULE_LABEL, SCENARIOS, SEVERITIES } from '@/lib/scenario'
+import type { AnyScenario, BuildScenario, DecisionScenario, Scenario, Severity } from '@/lib/scenario'
+import { BuildWorkspace } from '@/components/build-workspace'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
 
 const meta = siteMetadata['/assess']
 
 export const Route = createFileRoute('/assess')({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { t: string; g?: string } => ({
     t: typeof search.t === 'string' ? search.t : '',
+    ...(typeof search.g === 'string' ? { g: search.g } : {}),
   }),
   head: () => ({
     meta: [{ title: meta.title }, { name: 'description', content: meta.description }],
@@ -33,30 +35,93 @@ function useHydrated() {
   return hydrated
 }
 
+const ScenarioContext = createContext<AnyScenario>(SCENARIOS['ord-482-junior'])
+const useScenario = () => useContext(ScenarioContext)
+
 const clean = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : fallback
 
 function Assess() {
-  const { t: token } = Route.useSearch()
+  const { t: token, g: groupToken } = Route.useSearch()
   const hydrated = useHydrated()
   const session = useQuery(api.candidates.session, hydrated && token ? { token } : 'skip')
 
+  if (groupToken && !token) return hydrated ? <GroupLanding groupToken={groupToken} /> : <Loading />
   if (!token) return <Notice title="You need an invite link" body="Assessments are taken through a personal link sent by the hiring team. Check your email for the link, or ask your recruiter to resend it." />
   if (!hydrated || session === undefined) return <Loading />
   if (session === null) return <Notice title="This link isn't valid" body="Check that you copied the whole link from your invitation email, or ask your recruiter for a new one." />
   if (session.status === 'revoked') return <Notice title="This invitation was withdrawn" body="Please contact your recruiter if you think this is a mistake." />
-  if (session.status === 'submitted') return <Shell><Done /></Shell>
-  return <Attempt token={token} session={session} />
+  const scenario = SCENARIOS[session.scenarioId]
+  if (!scenario) return <Notice title="This assessment isn't available" body="Please contact your recruiter." />
+  return (
+    <ScenarioContext.Provider value={scenario}>
+      {session.status === 'submitted' ? (
+        <Shell><Done token={token} groupToken={session.groupToken} /></Shell>
+      ) : (
+        <Attempt token={token} session={session} />
+      )}
+    </ScenarioContext.Provider>
+  )
+}
+
+/** CU-3: one link for a battery of modules, taken in order. */
+function GroupLanding({ groupToken }: { groupToken: string }) {
+  const group = useQuery(api.candidates.group, { groupToken })
+  if (group === undefined) return <Loading />
+  if (group === null) return <Notice title="This link isn't valid" body="Check that you copied the whole link from your invitation email." />
+  const next = group.modules.find((m) => m.status !== 'submitted' && m.status !== 'revoked')
+  const total = group.modules.reduce((s, m) => s + m.minutes, 0)
+  return (
+    <Shell>
+      <main className="mx-auto max-w-2xl px-6 py-12">
+        <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Assessment battery</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{group.battery}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Hi {group.name}. This assessment has {group.modules.length} parts, about {total} minutes in total. Each part has its
+          own timer that starts when you begin it, so you can take a break between parts.
+        </p>
+        <ol className="mt-6 space-y-3">
+          {group.modules.map((m, i) => (
+            <li key={m.scenarioId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-5">
+              <div>
+                <div className="text-xs text-muted-foreground">Part {i + 1} · {MODULE_LABEL[m.kind]} · {m.minutes} min</div>
+                <div className="mt-1 font-semibold">{SCENARIOS[m.scenarioId]?.title ?? m.title}</div>
+              </div>
+              {m.status === 'submitted' ? (
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-success"><Check className="size-4" /> Done</span>
+              ) : m.status === 'revoked' ? (
+                <span className="text-sm text-muted-foreground">Withdrawn</span>
+              ) : (
+                <Link
+                  to="/assess"
+                  search={{ t: m.token }}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold',
+                    next?.token === m.token ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border border-border',
+                  )}
+                >
+                  {m.status === 'started' ? 'Continue' : 'Start'} <ArrowRight className="size-4" />
+                </Link>
+              )}
+            </li>
+          ))}
+        </ol>
+        {!next ? <p className="mt-6 text-sm font-semibold">All parts are complete. Thank you!</p> : null}
+      </main>
+    </Shell>
+  )
 }
 
 type Session = NonNullable<ReturnType<typeof useQuery<typeof api.candidates.session>>>
 
 function Attempt({ token, session }: { token: string; session: Session }) {
+  const scenario = useScenario()
   const draft = session.draft
   const [step, setStep] = useState<Step>(session.status === 'started' ? (draft?.step ?? 'review') : 'intro')
   const [comments, setComments] = useState<Comment[]>((draft?.comments as Comment[]) ?? [])
   const [verdict, setVerdict] = useState<Verdict | null>(draft?.verdict ?? null)
-  const [answers, setAnswers] = useState<string[]>(draft?.answers ?? SCENARIO.followUps.map(() => ''))
+  const [answers, setAnswers] = useState<string[]>(draft?.answers ?? scenario.followUps.map(() => ''))
+  const [code, setCode] = useState<string>(draft?.code ?? (scenario.kind === 'build' ? scenario.starterCode : ''))
   const [deadline, setDeadline] = useState<number | null>(session.deadline)
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
@@ -68,21 +133,28 @@ function Attempt({ token, session }: { token: string; session: Session }) {
   const submit = useMutation(api.submissions.submit)
 
   // FR-C-13: debounced autosave of everything the candidate has done so far.
-  const latest = useRef({ step, comments, verdict, answers })
-  latest.current = { step, comments, verdict, answers }
+  const latest = useRef({ step, comments, verdict, answers, code })
+  latest.current = { step, comments, verdict, answers, code }
   const flush = useCallback(
     async (override?: Partial<typeof latest.current>) => {
       const cur = { ...latest.current, ...override }
       if (cur.step !== 'review' && cur.step !== 'followup') return
       setSave({ status: 'saving' })
       try {
-        const r = await saveDraft({ token, step: cur.step, comments: cur.comments, verdict: cur.verdict ?? undefined, answers: cur.answers })
+        const r = await saveDraft({
+          token,
+          step: cur.step,
+          comments: cur.comments,
+          verdict: cur.verdict ?? undefined,
+          answers: cur.answers,
+          code: scenario.kind === 'build' ? cur.code : undefined,
+        })
         setSave({ status: 'saved', at: r.savedAt })
       } catch (err) {
         setSave({ status: 'error', message: clean(err, 'Could not save. Check your connection.') })
       }
     },
-    [saveDraft, token],
+    [saveDraft, token, scenario.kind],
   )
   const first = useRef(true)
   useEffect(() => {
@@ -93,7 +165,7 @@ function Attempt({ token, session }: { token: string; session: Session }) {
     if (step !== 'review' && step !== 'followup') return
     const id = setTimeout(() => void flush(), 800)
     return () => clearTimeout(id)
-  }, [comments, verdict, answers, step, flush])
+  }, [comments, verdict, answers, code, step, flush])
 
   const begin = async () => {
     setStarting(true)
@@ -115,11 +187,15 @@ function Attempt({ token, session }: { token: string; session: Session }) {
   }
 
   const finish = async () => {
-    if (!verdict) return
+    if (scenario.kind !== 'build' && !verdict) {
+      setSubmitError('Choose a verdict before submitting.')
+      return
+    }
     setSubmitting(true)
     setSubmitError('')
     try {
-      await submit({ token, verdict, comments, answers: answers.map((a) => a.trim()) })
+      if (scenario.kind === 'build') await submit({ token, comments: [], answers: [], code })
+      else await submit({ token, verdict: verdict!, comments: scenario.kind === 'code' ? comments : [], answers: answers.map((a) => a.trim()) })
       setStep('done')
     } catch (err) {
       setSubmitError(clean(err, 'Could not submit. Please try again.'))
@@ -138,7 +214,7 @@ function Attempt({ token, session }: { token: string; session: Session }) {
   return (
     <div className="min-h-screen bg-background">
       <TopBar
-        subtitle={`${SCENARIO.ticketId} · ${SCENARIO.role} · ${SCENARIO.level}`}
+        subtitle={`${scenario.ticketId} · ${MODULE_LABEL[scenario.kind]} · ${scenario.level}`}
         right={
           active && deadline ? (
             <>
@@ -151,13 +227,37 @@ function Attempt({ token, session }: { token: string; session: Session }) {
       {step === 'intro' && (
         <Intro name={session.name} minutes={session.minutes} extraMinutes={session.extraMinutes} onStart={begin} starting={starting} error={startError} />
       )}
-      {step === 'review' && (
+      {step === 'review' && scenario.kind === 'code' && (
         <Review comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
+      )}
+      {step === 'review' && scenario.kind === 'decision' && (
+        <DecisionForm
+          scenario={scenario}
+          verdict={verdict}
+          setVerdict={setVerdict}
+          answers={answers}
+          setAnswers={setAnswers}
+          onSubmit={finish}
+          submitting={submitting}
+          error={submitError}
+        />
+      )}
+      {step === 'review' && scenario.kind === 'build' && (
+        <BuildWorkspace
+          token={token}
+          scenario={scenario}
+          code={code}
+          setCode={setCode}
+          chat={draft?.chat ?? []}
+          onSubmit={finish}
+          submitting={submitting}
+          error={submitError}
+        />
       )}
       {step === 'followup' && (
         <FollowUp answers={answers} setAnswers={setAnswers} onSubmit={finish} submitting={submitting} error={submitError} />
       )}
-      {step === 'done' && <Done name={session.name} />}
+      {step === 'done' && <Done name={session.name} token={token} groupToken={session.groupToken} />}
       {step === 'timeup' && (
         <Notice
           embedded
@@ -263,25 +363,39 @@ function Intro({
   starting: boolean
   error: string
 }) {
+  const scenario = useScenario()
+  const bullets = scenario.kind === 'decision' ? scenario.constraints : scenario.criteria
+  const steps =
+    scenario.kind === 'code'
+      ? ['Read the pull request', 'Comment on lines and rate severity', 'Choose a verdict', 'Answer 3 short questions']
+      : scenario.kind === 'decision'
+        ? ['Read the context and the AI recommendation', 'Approve or reject it', 'Explain flawed assumptions and ignored risks', 'Propose what you would do instead']
+        : ['Read the ticket', 'Build it with the AI assistant', 'Run the visible tests', 'Submit your final code']
+  const note =
+    scenario.kind === 'code'
+      ? "A teammate's AI agent already opened a pull request for this ticket. Review it as you would any PR: leave line comments, rate severity, and decide whether to approve or request changes. AI-written code can be confidently wrong, so verify before you trust it. You can read every file, including unchanged helpers."
+      : scenario.kind === 'decision'
+        ? 'An AI agent wrote this recommendation. It may contain sound ideas and flawed reasoning side by side. Judge each claim against the context and constraints.'
+        : "The assistant is usually right, but not always. Use it like a capable teammate: accept what's correct, verify what matters, and fix what isn't. Everything you ask and accept is recorded."
   return (
     <main className="mx-auto grid max-w-6xl gap-10 px-6 py-12 lg:grid-cols-[1fr_340px]">
       <div>
         <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Ticket · {SCENARIO.ticketId}
+          {MODULE_LABEL[scenario.kind]} · {scenario.ticketId}
         </p>
-        <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight">{SCENARIO.title}</h1>
+        <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight">{scenario.title}</h1>
         <div className="mt-4 flex flex-wrap gap-2">
-          {[SCENARIO.stack, 'REST API', `${minutes} min`].map((c) => (
+          {[scenario.stack, `${minutes} min`].map((c) => (
             <span key={c} className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
               {c}
             </span>
           ))}
         </div>
-        <p className="mt-6 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">{SCENARIO.summary}</p>
+        <p className="mt-6 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">{scenario.summary}</p>
 
-        <h2 className="mt-8 text-sm font-semibold">Acceptance criteria</h2>
+        <h2 className="mt-8 text-sm font-semibold">{scenario.kind === 'decision' ? 'Constraints' : 'Acceptance criteria'}</h2>
         <ul className="mt-3 space-y-2.5">
-          {SCENARIO.criteria.map((c) => (
+          {bullets.map((c) => (
             <li key={c} className="flex gap-3 text-sm text-foreground/80">
               <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               {c}
@@ -291,18 +405,14 @@ function Intro({
 
         <div className="mt-8 flex max-w-2xl gap-3 rounded-lg border border-border bg-card p-4">
           <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            A teammate's AI agent already opened a pull request for this ticket. Review it as you would any PR: leave
-            line comments, rate severity, and decide whether to approve or request changes. AI-written code can be
-            confidently wrong, so verify before you trust it. You can read every file, including unchanged helpers.
-          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">{note}</p>
         </div>
       </div>
 
       <aside className="h-fit rounded-xl border border-border bg-card p-6">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">How it works</h2>
         <ol className="mt-4 space-y-3 text-sm">
-          {['Read the pull request', 'Comment on lines and rate severity', 'Choose a verdict', 'Answer 3 short questions'].map(
+          {steps.map(
             (s, i) => (
               <li key={s} className="flex items-center gap-3">
                 <span className="grid size-6 place-items-center rounded-full bg-muted font-mono text-xs font-semibold">{i + 1}</span>
@@ -321,7 +431,7 @@ function Intro({
           disabled={starting}
           className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         >
-          {starting ? <Loader2 className="size-4 animate-spin" /> : null} Start review <ArrowRight className="size-4" />
+          {starting ? <Loader2 className="size-4 animate-spin" /> : null} Start <ArrowRight className="size-4" />
         </button>
         {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
         <p className="mt-2 text-center text-xs text-muted-foreground">The timer starts when you click Start and can't be paused</p>
@@ -343,10 +453,11 @@ function Review({
   setVerdict: (v: Verdict) => void
   onNext: () => void
 }) {
-  const [activePath, setActivePath] = useState(SCENARIO.files[0].path)
+  const scenario = useScenario() as Scenario
+  const [activePath, setActivePath] = useState(scenario.files[0].path)
   const [composer, setComposer] = useState<{ line: number; severity: Severity; text: string; error: string } | null>(null)
   const [nextError, setNextError] = useState('')
-  const file = useMemo(() => SCENARIO.files.find((f) => f.path === activePath)!, [activePath])
+  const file = useMemo(() => scenario.files.find((f) => f.path === activePath)!, [activePath, scenario])
 
   const openComposer = (line: number) => setComposer({ line, severity: 'high', text: '', error: '' })
 
@@ -382,7 +493,7 @@ function Review({
       <aside className="border-b border-border bg-card lg:w-60 lg:shrink-0 lg:border-b-0 lg:border-r">
         <div className="px-4 pb-2 pt-5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Files</div>
         <nav className="flex gap-1 overflow-x-auto px-2 pb-3 lg:flex-col">
-          {SCENARIO.files.map((f) => {
+          {scenario.files.map((f) => {
             const count = comments.filter((c) => c.file === f.path).length
             return (
               <button
@@ -562,7 +673,7 @@ function FollowUp({
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">A few short questions about your review</h1>
       <p className="mt-2 text-sm text-muted-foreground">Two to four sentences each is plenty.</p>
       <div className="mt-8 space-y-7">
-        {SCENARIO.followUps.map((q, i) => (
+        {useScenario().followUps.map((q, i) => (
           <div key={q}>
             <label htmlFor={`q${i}`} className="block text-sm font-semibold leading-relaxed">
               {i + 1}. {q}
@@ -597,7 +708,8 @@ function FollowUp({
   )
 }
 
-function Done({ name }: { name?: string }) {
+function Done({ name, token, groupToken }: { name?: string; token: string; groupToken?: string | null }) {
+  const scenario = useScenario()
   return (
     <main className="mx-auto max-w-lg px-6 py-20">
       <div className="rounded-xl border border-border bg-card p-8 text-center">
@@ -605,16 +717,128 @@ function Done({ name }: { name?: string }) {
           <Check className="size-5" />
         </div>
         <h1 className="mt-4 text-xl font-semibold">Review submitted</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Thanks{name ? `, ${name}` : ''}. Your response for {SCENARIO.ticketId} is recorded.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Thanks{name ? `, ${name}` : ''}. Your response for {scenario.ticketId} is recorded.</p>
         <div className="mt-6 space-y-3 border-t border-border pt-5 text-left text-sm">
           <p><span className="font-semibold">Now:</span> <span className="text-muted-foreground">a panel of independent AI judges scores your comments against the known issues.</span></p>
           <p><span className="font-semibold">If they disagree</span> <span className="text-muted-foreground">on a serious item, a human reviews it.</span></p>
           <p><span className="font-semibold">Then</span> <span className="text-muted-foreground">the hiring team receives an evidence-backed report.</span></p>
+          <p className="text-muted-foreground">
+            If the hiring team shares your results, you'll find them at{' '}
+            <Link to="/results" search={{ t: token }} className="font-semibold text-foreground underline underline-offset-4">your results page</Link>,
+            where you can also ask for a human review.
+          </p>
         </div>
-        <Link to="/" className="mt-6 inline-block text-sm font-semibold underline-offset-4 hover:underline">
-          Back to home
-        </Link>
+        {groupToken ? (
+          <Link to="/assess" search={{ t: '', g: groupToken }} className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            Continue to the next part <ArrowRight className="size-4" />
+          </Link>
+        ) : (
+          <Link to="/" className="mt-6 inline-block text-sm font-semibold underline-offset-4 hover:underline">
+            Back to home
+          </Link>
+        )}
       </div>
+    </main>
+  )
+}
+
+function DecisionForm({
+  scenario,
+  verdict,
+  setVerdict,
+  answers,
+  setAnswers,
+  onSubmit,
+  submitting,
+  error,
+}: {
+  scenario: DecisionScenario
+  verdict: Verdict | null
+  setVerdict: (v: Verdict) => void
+  answers: string[]
+  setAnswers: React.Dispatch<React.SetStateAction<string[]>>
+  onSubmit: () => void
+  submitting: boolean
+  error: string
+}) {
+  const [localError, setLocalError] = useState('')
+  const trySubmit = () => {
+    if (!verdict) return setLocalError('Approve or reject the recommendation first.')
+    if (answers.some((a) => !a.trim())) return setLocalError('Fill in all three sections (a few sentences each is enough).')
+    setLocalError('')
+    onSubmit()
+  }
+  return (
+    <main className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[1fr_1fr]">
+      <section className="space-y-5">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h2 className="text-sm font-semibold">Context</h2>
+          <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-foreground/80">
+            {scenario.context.map((c) => <li key={c}>{c}</li>)}
+          </ul>
+          <h2 className="mt-5 text-sm font-semibold">Constraints</h2>
+          <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-foreground/80">
+            {scenario.constraints.map((c) => <li key={c}>{c}</li>)}
+          </ul>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">AI agent's recommendation</h2>
+            <span className="font-mono text-xs text-muted-foreground">{scenario.ticketId}.md</span>
+          </div>
+          <ol className="mt-3 space-y-2 font-mono text-[13px] leading-relaxed">
+            {scenario.recommendation.map((r, i) => (
+              <li key={r} className="flex gap-3">
+                <span className="w-5 shrink-0 text-right text-muted-foreground/60">{i + 1}</span>
+                <span>{r}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+      <section className="rounded-xl border border-border bg-card p-6">
+        <h2 className="text-sm font-semibold">Your decision</h2>
+        <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-border">
+          {(['request_changes', 'approve'] as Verdict[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => { setVerdict(v); setLocalError('') }}
+              className={cn('px-3 py-2 text-sm font-semibold', verdict === v ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:bg-accent')}
+            >
+              {v === 'approve' ? 'Approve the recommendation' : 'Reject it'}
+            </button>
+          ))}
+        </div>
+        <div className="mt-6 space-y-6">
+          {scenario.followUps.map((q, i) => (
+            <div key={q}>
+              <label htmlFor={`d${i}`} className="block text-sm font-semibold leading-relaxed">{i + 1}. {q}</label>
+              <textarea
+                id={`d${i}`}
+                rows={5}
+                value={answers[i] ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setAnswers((prev) => prev.map((a, j) => (j === i ? val : a)))
+                  setLocalError('')
+                }}
+                maxLength={4000}
+                className="mt-2 w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+              />
+            </div>
+          ))}
+        </div>
+        {localError || error ? <p className="mt-4 text-[13px] text-destructive">{localError || error}</p> : null}
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={trySubmit}
+            disabled={submitting}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          >
+            {submitting ? 'Submitting…' : 'Submit critique'} <ArrowRight className="size-4" />
+          </button>
+        </div>
+      </section>
     </main>
   )
 }

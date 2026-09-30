@@ -200,3 +200,10 @@ body {
 body vite-error-overlay {
   display: none;
 }
+
+/* FR-R-17: "PDF" export uses the browser's print-to-PDF. */
+@media print {
+  header, nav, .print\:hidden { display: none !important; }
+  body { background: white; }
+  main { max-width: none !important; }
+}

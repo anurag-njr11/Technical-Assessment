@@ -46,6 +46,7 @@ Convex run anywhere. To remove the dependency:
       (today: scripted assistant + signature checks + in-browser visible tests) (§7.3)
 - [ ] M3: council scoring of *how* faults were caught and of instruction quality
       (today: deterministic heuristic) (§7.3)
+- [ ] M3: human overrides of Directed Build items (today: resolve with a note only)
 - [ ] M2: more decision briefs; per-section judging instead of one combined critique
 
 ### P5 · Customization

@@ -329,3 +329,10 @@ export const MODULE_LABEL: Record<AnyScenario['kind'], string> = {
   decision: 'M2 · Decision Review',
   build: 'M3 · Directed Build (pilot)',
 }
+
+/** Mirrors BATTERIES in convex/answerKey.ts (a test keeps them in sync). */
+export const BATTERY_OPTIONS: Array<{ id: string; name: string; scenarioIds: string[] }> = [
+  { id: 'junior-backend', name: 'Junior Backend (Code Review + Decision Review)', scenarioIds: ['ord-482-junior', 'adr-031-mid'] },
+  { id: 'mid-backend', name: 'Mid Backend (Code Review + Decision Review)', scenarioIds: ['pay-217-mid', 'adr-031-mid'] },
+  { id: 'ai-collaboration', name: 'AI collaboration (Directed Build + Code Review)', scenarioIds: ['disc-12-build', 'ord-482-junior'] },
+]

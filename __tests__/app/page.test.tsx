@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
-import { SCENARIO } from "@/lib/scenario"
-import { ANSWER_KEYS, SCENARIO_META } from "@/convex/answerKey"
+import { BATTERY_OPTIONS, SCENARIO, SCENARIOS } from "@/lib/scenario"
+import { ANSWER_KEYS, BATTERIES, SCENARIO_META } from "@/convex/answerKey"
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -69,6 +69,36 @@ describe("server scenario metadata matches the candidate-visible scenario (SC-9)
 
   it("every answer key has matching scenario metadata", () => {
     for (const id of Object.keys(ANSWER_KEYS)) expect(SCENARIO_META[id], id).toBeDefined()
+  })
+
+  it("every scenario's kind, minutes and questions match the server, and batteries are mirrored", () => {
+    for (const [id, sc] of Object.entries(SCENARIOS)) {
+      expect(SCENARIO_META[id], id).toMatchObject({ kind: sc.kind, minutes: sc.minutes, followUps: sc.followUps })
+    }
+    expect(Object.keys(SCENARIO_META).sort()).toEqual(Object.keys(SCENARIOS).sort())
+    for (const b of BATTERY_OPTIONS) expect(BATTERIES[b.id]).toEqual({ name: b.name, scenarioIds: b.scenarioIds })
+  })
+
+  it("every code-review answer key points at lines candidates can see, and no key text ships to the browser", () => {
+    const all = srcFiles.map((f) => readFileSync(f, "utf8")).join("\n")
+    for (const [id, key] of Object.entries(ANSWER_KEYS)) {
+      for (const item of key.items) {
+        expect(all, `${id} ${item.id}`).not.toContain(item.description)
+        const sc = SCENARIOS[id]
+        if (sc.kind !== "code") continue
+        const file = sc.files.find((f) => f.path === item.file)!
+        const visible = new Set(file.lines.map((l) => l.n))
+        for (let n = item.lineStart; n <= item.lineEnd; n++) expect(visible.has(n), `${id} ${item.id} line ${n}`).toBe(true)
+      }
+    }
+  })
+
+  it("PAY-217's hallucinated gateway method is absent from the provided gateway file", () => {
+    const sc = SCENARIOS["pay-217-mid"]
+    if (sc.kind !== "code") throw new Error("expected code scenario")
+    const gw = sc.files.find((f) => f.path === "payments/gateway.py")!.lines.map((l) => l.code).join("\n")
+    expect(gw).toContain("def issue_refund")
+    expect(gw).not.toMatch(/def refund\(/)
   })
 })
 

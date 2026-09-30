@@ -10,15 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ReviewRouteImport } from './routes/review'
+import { Route as ResultsRouteImport } from './routes/results'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as ReliabilityRouteImport } from './routes/reliability'
 import { Route as RecruiterRouteImport } from './routes/recruiter'
+import { Route as MethodologyRouteImport } from './routes/methodology'
+import { Route as ItemsRouteImport } from './routes/items'
 import { Route as AssessRouteImport } from './routes/assess'
 import { Route as IndexRouteImport } from './routes/index'
 
 const ReviewRoute = ReviewRouteImport.update({
   id: '/review',
   path: '/review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResultsRoute = ResultsRouteImport.update({
+  id: '/results',
+  path: '/results',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportRoute = ReportRouteImport.update({
@@ -36,6 +44,16 @@ const RecruiterRoute = RecruiterRouteImport.update({
   path: '/recruiter',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MethodologyRoute = MethodologyRouteImport.update({
+  id: '/methodology',
+  path: '/methodology',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ItemsRoute = ItemsRouteImport.update({
+  id: '/items',
+  path: '/items',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AssessRoute = AssessRouteImport.update({
   id: '/assess',
   path: '/assess',
@@ -50,50 +68,82 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
+  '/items': typeof ItemsRoute
+  '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
   '/reliability': typeof ReliabilityRoute
   '/report': typeof ReportRoute
+  '/results': typeof ResultsRoute
   '/review': typeof ReviewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
+  '/items': typeof ItemsRoute
+  '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
   '/reliability': typeof ReliabilityRoute
   '/report': typeof ReportRoute
+  '/results': typeof ResultsRoute
   '/review': typeof ReviewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
+  '/items': typeof ItemsRoute
+  '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
   '/reliability': typeof ReliabilityRoute
   '/report': typeof ReportRoute
+  '/results': typeof ResultsRoute
   '/review': typeof ReviewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/assess' | '/recruiter' | '/reliability' | '/report' | '/review'
+    | '/'
+    | '/assess'
+    | '/items'
+    | '/methodology'
+    | '/recruiter'
+    | '/reliability'
+    | '/report'
+    | '/results'
+    | '/review'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/assess' | '/recruiter' | '/reliability' | '/report' | '/review'
+  to:
+    | '/'
+    | '/assess'
+    | '/items'
+    | '/methodology'
+    | '/recruiter'
+    | '/reliability'
+    | '/report'
+    | '/results'
+    | '/review'
   id:
     | '__root__'
     | '/'
     | '/assess'
+    | '/items'
+    | '/methodology'
     | '/recruiter'
     | '/reliability'
     | '/report'
+    | '/results'
     | '/review'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AssessRoute: typeof AssessRoute
+  ItemsRoute: typeof ItemsRoute
+  MethodologyRoute: typeof MethodologyRoute
   RecruiterRoute: typeof RecruiterRoute
   ReliabilityRoute: typeof ReliabilityRoute
   ReportRoute: typeof ReportRoute
+  ResultsRoute: typeof ResultsRoute
   ReviewRoute: typeof ReviewRoute
 }
 
@@ -104,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/review'
       fullPath: '/review'
       preLoaderRoute: typeof ReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/results': {
+      id: '/results'
+      path: '/results'
+      fullPath: '/results'
+      preLoaderRoute: typeof ResultsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/report': {
@@ -127,6 +184,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecruiterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/methodology': {
+      id: '/methodology'
+      path: '/methodology'
+      fullPath: '/methodology'
+      preLoaderRoute: typeof MethodologyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/items': {
+      id: '/items'
+      path: '/items'
+      fullPath: '/items'
+      preLoaderRoute: typeof ItemsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/assess': {
       id: '/assess'
       path: '/assess'
@@ -147,9 +218,12 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AssessRoute: AssessRoute,
+  ItemsRoute: ItemsRoute,
+  MethodologyRoute: MethodologyRoute,
   RecruiterRoute: RecruiterRoute,
   ReliabilityRoute: ReliabilityRoute,
   ReportRoute: ReportRoute,
+  ResultsRoute: ResultsRoute,
   ReviewRoute: ReviewRoute,
 }
 export const routeTree = rootRouteImport

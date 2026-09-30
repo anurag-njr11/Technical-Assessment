@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel"
 import { requireRecruiter } from "./access"
 import { effectiveResult, loadOverrides } from "./submissions"
 import { outcomeValidator } from "./schema"
+import { SCENARIO_META } from "./answerKey"
 
 // Human review queue (spec §15.4). Escalated submissions wait here; a
 // reviewer confirms or overrides item outcomes / comment classes with a
@@ -78,6 +79,12 @@ async function recompute(ctx: MutationCtx, id: Id<"submissions">) {
   await ctx.db.patch(id, { machineResult: machine, result: effectiveResult(sub, machine, overrides) })
 }
 
+function noBuildOverrides(scenarioId: string) {
+  if (SCENARIO_META[scenarioId]?.kind === "build") {
+    throw new Error("Directed Build pilot results can't be overridden yet. Resolve the review with a note instead.")
+  }
+}
+
 function checkJustification(text: string) {
   const t = text.trim()
   if (t.length < MIN_JUSTIFICATION) throw new Error(`Write a justification (at least ${MIN_JUSTIFICATION} characters).`)
@@ -99,6 +106,7 @@ export const overrideItem = mutation({
     const justification = checkJustification(args.justification)
     const sub = await ctx.db.get(args.submissionId)
     if (!sub || sub.status !== "graded" || !sub.result) throw new Error("Only graded submissions can be reviewed.")
+    noBuildOverrides(sub.scenarioId)
     const item = sub.result.items.find((i) => i.id === args.itemId)
     if (!item) throw new Error("Unknown item.")
     const allowed = item.kind === "issue" ? ["found", "missed"] : ["clean", "false_alarm"]
