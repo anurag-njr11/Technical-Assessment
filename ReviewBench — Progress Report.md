@@ -117,3 +117,14 @@ Claim the workspace today, then complete Phase P1 in one focused build session b
 - Should follow-up answers count toward the score?
 - Should candidates see their detailed report by default?
 - Which model providers meet the no-training-on-inputs requirement for production?
+
+## Work log
+
+### 30 Sep 2026 · Checkpoint 1: P1 backend and P2 engine
+
+Scope agreed with the owner: all P1 blockers, the remaining known gaps, and the P2 reliability tooling. Delivery is the GitHub branch `ccr-327afa78-rdcapg`; syncing to Macaly and deploying is done by the owner.
+
+- **Backend built:** single-use invite tokens and rate limits (FR-C-12, SEC-15); server-side autosave with review lock (FR-C-13, FR-C-8); enforced deadline with auto-submit (FR-C-14); extra-time accommodations (FR-C-16); human review queue with audited overrides, deterministic recompute and golden-set feed (HR-1–4); family-distinct judge fallbacks (GR-7); `vague_match` label (GR-15); validated result schema (NFR-DATA-1); judge-call tracing (EX-2); anonymization (FB-1); golden-set labels, test–retest, perturbation, adversarial and golden-set regression runs, and a reliability dashboard query (REL-1–10, FB-2).
+- **Tests:** 64/64 passing (was 24), typecheck clean for the backend.
+- **Next:** frontend for the above, then a full rewrite of this report.
+

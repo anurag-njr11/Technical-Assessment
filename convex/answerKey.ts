@@ -24,6 +24,24 @@ export type AnswerKey = {
   items: KeyItem[]
 }
 
+// Server-side scenario facts the backend needs without trusting the client
+// (SC-9 version, time limit, level). Must match src/lib/scenario.ts; a test
+// enforces that.
+export type ScenarioMeta = { version: number; level: string; minutes: number; followUps: string[] }
+
+export const SCENARIO_META: Record<string, ScenarioMeta> = {
+  "ord-482-junior": {
+    version: 1,
+    level: "Junior",
+    minutes: 40,
+    followUps: [
+      "What would you verify before approving any change that builds a database query from request parameters?",
+      "What would you test before merging the date-filter change, beyond what is already in the test file?",
+      "If you had to give the AI agent one instruction to fix the most serious problem you found, what would you tell it?",
+    ],
+  },
+}
+
 export const ANSWER_KEYS: Record<string, AnswerKey> = {
   "ord-482-junior": {
     scenarioId: "ord-482-junior",
