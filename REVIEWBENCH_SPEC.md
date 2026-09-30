@@ -856,7 +856,7 @@ type Result = {
 
 | Judge | Primary model | Fallback (current) |
 |---|---|---|
-| A | `google/gemini-3.6-flash` | `qwen/qwen3-235b-a22b-instruct` (Alibaba) |
+| A | `google/gemini-3.6-flash` | `qwen/qwen3-235b-a22b-2507` (Alibaba) |
 | B | `anthropic/claude-sonnet-5` | `mistralai/mistral-large` (Mistral) |
 | C | `meta-llama/llama-3.3-70b-instruct` | `deepseek/deepseek-chat` (DeepSeek) |
 

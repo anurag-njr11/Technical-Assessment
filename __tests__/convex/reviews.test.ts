@@ -15,7 +15,7 @@ const SPLIT: C[] = [
 
 function degradePanel() {
   modes["google/gemini-3.6-flash"] = "down"
-  modes["qwen/qwen3-235b-a22b-instruct"] = "down"
+  modes["qwen/qwen3-235b-a22b-2507"] = "down"
   modes["meta-llama/llama-3.3-70b-instruct"] = "garbage"
 }
 

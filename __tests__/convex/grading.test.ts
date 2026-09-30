@@ -67,7 +67,7 @@ describe("grading pipeline", () => {
 
   it("does not give credit when only one judge is usable, and escalates", async () => {
     modes["google/gemini-3.6-flash"] = "down"
-    modes["qwen/qwen3-235b-a22b-instruct"] = "down"
+    modes["qwen/qwen3-235b-a22b-2507"] = "down"
     modes["meta-llama/llama-3.3-70b-instruct"] = "garbage"
     const { result } = await submitAndGrade(makeT(), PRIYA)
     expect(outcome(result, "I1")).toBe("missed")

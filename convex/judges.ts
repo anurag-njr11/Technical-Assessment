@@ -14,7 +14,7 @@ export const DEFAULT_PANEL: Judge[] = [
   {
     name: "Judge A",
     primary: { model: "google/gemini-3.6-flash", family: "google" },
-    fallback: { model: "qwen/qwen3-235b-a22b-instruct", family: "alibaba" },
+    fallback: { model: "qwen/qwen3-235b-a22b-2507", family: "alibaba" },
   },
   {
     name: "Judge B",
