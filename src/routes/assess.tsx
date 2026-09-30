@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useMutation } from 'convex/react'
-import { ArrowRight, Check, Info, MessageSquarePlus, Trash2 } from 'lucide-react'
+import { useMutation, useQuery } from 'convex/react'
+import { ArrowRight, Check, Clock, Info, Loader2, Lock, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import { SeverityChip, TopBar } from '@/components/rb'
 import { SCENARIO, SEVERITIES } from '@/lib/scenario'
@@ -12,35 +12,106 @@ import siteMetadata from '@/metadata.json'
 const meta = siteMetadata['/assess']
 
 export const Route = createFileRoute('/assess')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    t: typeof search.t === 'string' ? search.t : '',
+  }),
   head: () => ({
     meta: [{ title: meta.title }, { name: 'description', content: meta.description }],
   }),
   component: Assess,
 })
 
-type Step = 'intro' | 'review' | 'followup' | 'done'
+type Step = 'intro' | 'review' | 'followup' | 'done' | 'timeup'
 type Comment = { id: string; file: string; line: number; severity: Severity; text: string }
 type Verdict = 'approve' | 'request_changes'
+type SaveState = { status: 'idle' | 'saving' | 'saved' | 'error'; at?: number; message?: string }
+
+/** FR-C-15: true only after React has hydrated, so clicks are never silently lost. */
+function useHydrated() {
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => setHydrated(true), [])
+  return hydrated
+}
+
+const clean = (err: unknown, fallback: string) =>
+  err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : fallback
 
 function Assess() {
-  const [step, setStep] = useState<Step>('intro')
-  const [name, setName] = useState('')
-  const [nameError, setNameError] = useState('')
-  const [comments, setComments] = useState<Comment[]>([])
-  const [verdict, setVerdict] = useState<Verdict | null>(null)
-  const [answers, setAnswers] = useState<string[]>(SCENARIO.followUps.map(() => ''))
-  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const { t: token } = Route.useSearch()
+  const hydrated = useHydrated()
+  const session = useQuery(api.candidates.session, hydrated && token ? { token } : 'skip')
+
+  if (!token) return <Notice title="You need an invite link" body="Assessments are taken through a personal link sent by the hiring team. Check your email for the link, or ask your recruiter to resend it." />
+  if (!hydrated || session === undefined) return <Loading />
+  if (session === null) return <Notice title="This link isn't valid" body="Check that you copied the whole link from your invitation email, or ask your recruiter for a new one." />
+  if (session.status === 'revoked') return <Notice title="This invitation was withdrawn" body="Please contact your recruiter if you think this is a mistake." />
+  if (session.status === 'submitted') return <Shell><Done /></Shell>
+  return <Attempt token={token} session={session} />
+}
+
+type Session = NonNullable<ReturnType<typeof useQuery<typeof api.candidates.session>>>
+
+function Attempt({ token, session }: { token: string; session: Session }) {
+  const draft = session.draft
+  const [step, setStep] = useState<Step>(session.status === 'started' ? (draft?.step ?? 'review') : 'intro')
+  const [comments, setComments] = useState<Comment[]>((draft?.comments as Comment[]) ?? [])
+  const [verdict, setVerdict] = useState<Verdict | null>(draft?.verdict ?? null)
+  const [answers, setAnswers] = useState<string[]>(draft?.answers ?? SCENARIO.followUps.map(() => ''))
+  const [deadline, setDeadline] = useState<number | null>(session.deadline)
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [save, setSave] = useState<SaveState>({ status: draft ? 'saved' : 'idle', at: draft?.updatedAt })
+  const start = useMutation(api.candidates.start)
+  const saveDraft = useMutation(api.candidates.saveDraft)
   const submit = useMutation(api.submissions.submit)
 
-  const begin = () => {
-    if (!name.trim()) {
-      setNameError('Enter your name to begin.')
+  // FR-C-13: debounced autosave of everything the candidate has done so far.
+  const latest = useRef({ step, comments, verdict, answers })
+  latest.current = { step, comments, verdict, answers }
+  const flush = useCallback(
+    async (override?: Partial<typeof latest.current>) => {
+      const cur = { ...latest.current, ...override }
+      if (cur.step !== 'review' && cur.step !== 'followup') return
+      setSave({ status: 'saving' })
+      try {
+        const r = await saveDraft({ token, step: cur.step, comments: cur.comments, verdict: cur.verdict ?? undefined, answers: cur.answers })
+        setSave({ status: 'saved', at: r.savedAt })
+      } catch (err) {
+        setSave({ status: 'error', message: clean(err, 'Could not save. Check your connection.') })
+      }
+    },
+    [saveDraft, token],
+  )
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
       return
     }
-    setStartedAt(Date.now())
-    setStep('review')
+    if (step !== 'review' && step !== 'followup') return
+    const id = setTimeout(() => void flush(), 800)
+    return () => clearTimeout(id)
+  }, [comments, verdict, answers, step, flush])
+
+  const begin = async () => {
+    setStarting(true)
+    setStartError('')
+    try {
+      const r = await start({ token })
+      setDeadline(r.deadline)
+      setStep('review')
+    } catch (err) {
+      setStartError(clean(err, 'Could not start. Please try again.'))
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const toFollowUps = async () => {
+    setStep('followup')
+    await flush({ step: 'followup' })
   }
 
   const finish = async () => {
@@ -48,64 +119,120 @@ function Assess() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      await submit({
-        candidateName: name.trim(),
-        scenarioId: SCENARIO.id,
-        level: SCENARIO.level,
-        verdict,
-        comments,
-        followUps: SCENARIO.followUps.map((q, i) => ({ question: q, answer: answers[i].trim() })),
-      })
+      await submit({ token, verdict, comments, answers: answers.map((a) => a.trim()) })
       setStep('done')
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Could not submit. Please try again.')
+      setSubmitError(clean(err, 'Could not submit. Please try again.'))
     } finally {
       setSubmitting(false)
     }
   }
 
+  // FR-C-14: when the server deadline passes, save and stop. The server
+  // auto-submits the saved work shortly after (deadline + grace period).
+  const onExpire = useCallback(() => {
+    void flush().finally(() => setStep('timeup'))
+  }, [flush])
+
+  const active = step === 'review' || step === 'followup'
   return (
     <div className="min-h-screen bg-background">
       <TopBar
         subtitle={`${SCENARIO.ticketId} · ${SCENARIO.role} · ${SCENARIO.level}`}
-        right={step === 'review' || step === 'followup' ? <Timer startedAt={startedAt} minutes={SCENARIO.minutes} /> : null}
+        right={
+          active && deadline ? (
+            <>
+              <SaveIndicator save={save} />
+              <Timer deadline={deadline} onExpire={onExpire} />
+            </>
+          ) : null
+        }
       />
       {step === 'intro' && (
-        <Intro name={name} setName={(v) => { setName(v); setNameError('') }} nameError={nameError} onStart={begin} />
+        <Intro name={session.name} minutes={session.minutes} extraMinutes={session.extraMinutes} onStart={begin} starting={starting} error={startError} />
       )}
       {step === 'review' && (
-        <Review
-          comments={comments}
-          setComments={setComments}
-          verdict={verdict}
-          setVerdict={setVerdict}
-          onNext={() => setStep('followup')}
-        />
+        <Review comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
       )}
       {step === 'followup' && (
-        <FollowUp
-          answers={answers}
-          setAnswers={setAnswers}
-          onSubmit={finish}
-          submitting={submitting}
-          error={submitError}
+        <FollowUp answers={answers} setAnswers={setAnswers} onSubmit={finish} submitting={submitting} error={submitError} />
+      )}
+      {step === 'done' && <Done name={session.name} />}
+      {step === 'timeup' && (
+        <Notice
+          embedded
+          icon={<Clock className="size-5" />}
+          title="Time is up"
+          body="Your work was saved and will be submitted automatically in the next couple of minutes. You can close this page."
         />
       )}
-      {step === 'done' && <Done name={name.trim()} />}
     </div>
   )
 }
 
-function Timer({ startedAt, minutes }: { startedAt: number | null; minutes: number }) {
-  const [now, setNow] = useState<number | null>(null)
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background">
+      <TopBar subtitle="Assessment" />
+      {children}
+    </div>
+  )
+}
+
+function Loading() {
+  return (
+    <Shell>
+      <div className="grid place-items-center py-24" role="status" aria-label="Loading">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    </Shell>
+  )
+}
+
+function Notice({ title, body, icon, embedded }: { title: string; body: string; icon?: React.ReactNode; embedded?: boolean }) {
+  const card = (
+    <main className="mx-auto max-w-lg px-6 py-20">
+      <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <div className="mx-auto grid size-12 place-items-center rounded-full border border-foreground">{icon ?? <Lock className="size-5" />}</div>
+        <h1 className="mt-4 text-xl font-semibold">{title}</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
+      </div>
+    </main>
+  )
+  return embedded ? card : <Shell>{card}</Shell>
+}
+
+function SaveIndicator({ save }: { save: SaveState }) {
+  const text =
+    save.status === 'saving'
+      ? 'Saving…'
+      : save.status === 'saved' && save.at
+        ? `Saved ${new Date(save.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        : save.status === 'error'
+          ? save.message ?? 'Not saved'
+          : ''
+  if (!text) return null
+  return (
+    <span className={cn('hidden text-xs sm:inline', save.status === 'error' ? 'text-destructive' : 'text-muted-foreground')} aria-live="polite">
+      {text}
+    </span>
+  )
+}
+
+function Timer({ deadline, onExpire }: { deadline: number; onExpire: () => void }) {
+  const [now, setNow] = useState(() => Date.now())
+  const fired = useRef(false)
   useEffect(() => {
-    setNow(Date.now())
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
-  const total = minutes * 60
-  const elapsed = startedAt && now ? Math.floor((now - startedAt) / 1000) : 0
-  const left = Math.max(0, total - elapsed)
+  const left = Math.max(0, Math.floor((deadline - now) / 1000))
+  useEffect(() => {
+    if (left === 0 && !fired.current) {
+      fired.current = true
+      onExpire()
+    }
+  }, [left, onExpire])
   const mm = String(Math.floor(left / 60)).padStart(2, '0')
   const ss = String(left % 60).padStart(2, '0')
   return (
@@ -123,14 +250,18 @@ function Timer({ startedAt, minutes }: { startedAt: number | null; minutes: numb
 
 function Intro({
   name,
-  setName,
-  nameError,
+  minutes,
+  extraMinutes,
   onStart,
+  starting,
+  error,
 }: {
   name: string
-  setName: (v: string) => void
-  nameError: string
+  minutes: number
+  extraMinutes: number
   onStart: () => void
+  starting: boolean
+  error: string
 }) {
   return (
     <main className="mx-auto grid max-w-6xl gap-10 px-6 py-12 lg:grid-cols-[1fr_340px]">
@@ -140,7 +271,7 @@ function Intro({
         </p>
         <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight">{SCENARIO.title}</h1>
         <div className="mt-4 flex flex-wrap gap-2">
-          {[SCENARIO.stack, 'REST API', `About ${SCENARIO.minutes} min`].map((c) => (
+          {[SCENARIO.stack, 'REST API', `${minutes} min`].map((c) => (
             <span key={c} className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
               {c}
             </span>
@@ -180,26 +311,20 @@ function Intro({
             ),
           )}
         </ol>
-        <label htmlFor="cand-name" className="mt-6 block text-sm font-semibold">
-          Your name
-        </label>
-        <input
-          id="cand-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && onStart()}
-          className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
-          placeholder="e.g. Priya Sharma"
-          maxLength={120}
-        />
-        {nameError ? <p className="mt-1.5 text-[13px] text-destructive">{nameError}</p> : null}
+        <p className="mt-6 text-sm">
+          Hi <span className="font-semibold">{name}</span>. You have <span className="font-semibold">{minutes} minutes</span>
+          {extraMinutes > 0 ? ` (includes ${extraMinutes} extra)` : ''}. Your work saves automatically, so a refresh or a
+          dropped connection won't lose it.
+        </p>
         <button
           onClick={onStart}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          disabled={starting}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         >
-          Start review <ArrowRight className="size-4" />
+          {starting ? <Loader2 className="size-4 animate-spin" /> : null} Start review <ArrowRight className="size-4" />
         </button>
-        <p className="mt-2 text-center text-xs text-muted-foreground">The timer starts when you click Start</p>
+        {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
+        <p className="mt-2 text-center text-xs text-muted-foreground">The timer starts when you click Start and can't be paused</p>
       </aside>
     </main>
   )
@@ -472,7 +597,7 @@ function FollowUp({
   )
 }
 
-function Done({ name }: { name: string }) {
+function Done({ name }: { name?: string }) {
   return (
     <main className="mx-auto max-w-lg px-6 py-20">
       <div className="rounded-xl border border-border bg-card p-8 text-center">
@@ -480,7 +605,7 @@ function Done({ name }: { name: string }) {
           <Check className="size-5" />
         </div>
         <h1 className="mt-4 text-xl font-semibold">Review submitted</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Thanks, {name}. Your response for {SCENARIO.ticketId} is recorded.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Thanks{name ? `, ${name}` : ''}. Your response for {SCENARIO.ticketId} is recorded.</p>
         <div className="mt-6 space-y-3 border-t border-border pt-5 text-left text-sm">
           <p><span className="font-semibold">Now:</span> <span className="text-muted-foreground">a panel of independent AI judges scores your comments against the known issues.</span></p>
           <p><span className="font-semibold">If they disagree</span> <span className="text-muted-foreground">on a serious item, a human reviews it.</span></p>

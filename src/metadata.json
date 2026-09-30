@@ -18,5 +18,13 @@
   "/report": {
     "title": "Candidate report — ReviewBench",
     "description": "Evidence-backed grading report."
+  },
+  "/review": {
+    "title": "Review queue — ReviewBench",
+    "description": "Escalated submissions awaiting human review."
+  },
+  "/reliability": {
+    "title": "Reliability — ReviewBench",
+    "description": "How well the judge council agrees with human graders."
   }
 }

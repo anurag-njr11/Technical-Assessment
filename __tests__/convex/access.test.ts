@@ -112,4 +112,22 @@ describe("access control", () => {
       t.withIdentity({ subject: owner }).mutation(api.access.removeMember, { id: ownerRow._id }),
     ).rejects.toThrow(/owner can't be removed/)
   })
+
+  it("WORKSPACE_OWNER_EMAIL reserves the unclaimed workspace for one email (SEC-5)", async () => {
+    process.env.WORKSPACE_OWNER_EMAIL = " Owner@Acme.com "
+    try {
+      const t = makeT()
+      const intruder = await seedUser(t, "intruder@evil.com")
+      const owner = await seedUser(t, "owner@acme.com")
+      expect(await t.withIdentity({ subject: intruder }).query(api.access.me, {})).toMatchObject({ canClaim: false })
+      await expect(
+        t.withIdentity({ subject: intruder }).mutation(api.access.claimWorkspace, {}),
+      ).rejects.toThrow(/reserved/)
+      expect(await t.withIdentity({ subject: owner }).query(api.access.me, {})).toMatchObject({ canClaim: true })
+      await t.withIdentity({ subject: owner }).mutation(api.access.claimWorkspace, {})
+      expect(await t.withIdentity({ subject: owner }).query(api.access.me, {})).toMatchObject({ role: "owner" })
+    } finally {
+      delete process.env.WORKSPACE_OWNER_EMAIL
+    }
+  })
 })

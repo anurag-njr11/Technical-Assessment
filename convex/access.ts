@@ -28,6 +28,22 @@ export async function requireRecruiter(ctx: QueryCtx | MutationCtx): Promise<Doc
   return member
 }
 
+/** Throws unless the caller is the workspace owner. */
+export async function requireOwner(ctx: QueryCtx | MutationCtx): Promise<Doc<"recruiters">> {
+  const member = await requireRecruiter(ctx)
+  if (member.role !== "owner") throw new Error("Only the workspace owner can do this.")
+  return member
+}
+
+/**
+ * SEC-5 hardening: if WORKSPACE_OWNER_EMAIL is set, only that (verified) email
+ * may claim the unclaimed workspace, so a stranger can't race the owner.
+ */
+function ownerEmailAllowed(email: string): boolean {
+  const required = process.env.WORKSPACE_OWNER_EMAIL
+  return !required || normEmail(required) === email
+}
+
 export const me = query({
   args: {},
   handler: async (ctx) => {
@@ -49,6 +65,7 @@ export const me = query({
       verified: !!user?.emailVerificationTime,
       role: member?.role ?? null,
       workspaceClaimed: !!anyMember,
+      canClaim: !anyMember && !!email && ownerEmailAllowed(email),
       invited: !!invite,
     }
   },
@@ -61,6 +78,9 @@ export const claimWorkspace = mutation({
     if (!user) throw new Error("Verify your email before claiming the workspace.")
     const existing = await ctx.db.query("recruiters").first()
     if (existing) throw new Error("This workspace already has an owner. Ask them for an invite.")
+    if (!ownerEmailAllowed(normEmail(user.email!))) {
+      throw new Error("This workspace is reserved for a different owner email.")
+    }
     await ctx.db.insert("recruiters", {
       userId: user._id,
       email: normEmail(user.email!),
