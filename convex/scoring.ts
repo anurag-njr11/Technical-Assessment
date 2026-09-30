@@ -39,7 +39,7 @@ type ScoreInput = {
 }
 
 export function componentValues(input: ScoreInput) {
-  const issues = input.items.filter((i) => i.kind === "issue")
+  const issues = input.items.filter((i) => i.kind === "issue" && i.outcome !== "not_exposed")
   const decoys = input.items.filter((i) => i.kind === "decoy")
   const found = issues.filter((i) => i.outcome === "found")
 

@@ -6,6 +6,8 @@ import type { AnswerKey, KeyItem } from "./answerKey"
 import { PROMPT_VERSION, RUBRIC_VERSION, getPanel, liveAsker, redact } from "./judges"
 import type { Asker, Judge, JudgeAnswer, Trace } from "./judges"
 import { SCORING_VERSION, computeScore } from "./scoring"
+import { gradeBuild } from "./buildScenario"
+import { applyConfig } from "./items"
 import type { CommentClass, ExtraComment, ItemResult, Result } from "./scoring"
 
 /*
@@ -36,6 +38,7 @@ type Consensus = {
   decision: boolean
   impact: boolean
   fix: boolean
+  constructive: boolean
   validCount: number
   unanimous: boolean
   votes: Vote[]
@@ -70,13 +73,42 @@ function snippetFor(item: KeyItem): string {
   return `File: ${item.file}, lines ${item.lineStart}-${item.lineEnd}`
 }
 
-function issuePrompt(item: KeyItem, comment: Comment): string {
+export type Example = { itemId: string; text: string; identified: boolean }
+
+function tokens(s: string) {
+  return new Set(s.toLowerCase().split(/[^a-z0-9_]+/).filter((w) => w.length > 2))
+}
+
+/** KA-2: the most lexically similar human-graded examples for this item (embeddings: later). */
+export function pickExamples(examples: Example[], itemId: string, text: string, k = 2): Example[] {
+  const q = tokens(text)
+  return examples
+    .filter((e) => e.itemId === itemId)
+    .map((e) => {
+      const t = tokens(e.text)
+      const inter = [...t].filter((w) => q.has(w)).length
+      return { e, sim: inter / (t.size + q.size - inter || 1) }
+    })
+    .sort((a, b) => b.sim - a.sim)
+    .slice(0, k)
+    .map((x) => x.e)
+}
+
+function examplesBlock(examples: Example[]): string {
+  if (!examples.length) return ""
+  return `
+Calibration examples graded by human reviewers (for reference only; they are not the comment you are grading):
+${examples.map((e) => `- "${e.text.slice(0, 300)}" -> identifies_issue: ${e.identified}`).join("\n")}
+`
+}
+
+function issuePrompt(item: KeyItem, comment: Comment, examples: Example[] = []): string {
   return `Answer-key issue (known planted defect):
 - Title: ${item.title}
 - Location: ${snippetFor(item)}
 - What is wrong: ${item.description}
 - Acceptable fix: ${item.acceptableFix}
-
+${examplesBlock(examples)}
 <candidate_comment file="${comment.file}" line="${comment.line}">
 ${comment.text}
 </candidate_comment>
@@ -85,9 +117,10 @@ Checklist:
 1. identifies_issue: Does the comment identify THIS SAME underlying problem (not just the same line, not a different problem)?
 2. states_impact: Does the comment state a concrete consequence (crash, wrong data, security risk, etc.)?
 3. proposes_fix: Does the comment propose a fix consistent with the acceptable fix?
-4. evidence: If identifies_issue is true, copy an exact verbatim phrase (3-20 words) from the candidate comment that shows it. Otherwise "".
+4. constructive: Is the comment specific and actionable, so the author could act on it without guessing?
+5. evidence: If identifies_issue is true, copy an exact verbatim phrase (3-20 words) from the candidate comment that shows it. Otherwise "".
 
-Return JSON: {"identifies_issue": boolean, "states_impact": boolean, "proposes_fix": boolean, "evidence": string}`
+Return JSON: {"identifies_issue": boolean, "states_impact": boolean, "proposes_fix": boolean, "constructive": boolean, "evidence": string}`
 }
 
 function decoyPrompt(item: KeyItem, comment: Comment): string {
@@ -127,6 +160,23 @@ Checklist:
 Return JSON: {"matches_item_id": string | null, "classification": "matched" | "valid_extra" | "nitpick" | "false_alarm", "evidence": string}`
 }
 
+function followUpPrompt(question: string, answer: string): string {
+  return `Follow-up question from a code-review assessment:
+"${question}"
+
+<candidate_answer>
+${answer}
+</candidate_answer>
+
+Checklist:
+1. addresses_question: Does the answer actually answer this question?
+2. specific: Does it refer to concrete code, data, parameters or steps from the scenario rather than generic advice?
+3. actionable: Does it give concrete checks, tests or instructions someone could carry out?
+4. evidence: exact verbatim phrase (3-20 words) from the answer supporting your answers, or "" if all are false.
+
+Return JSON: {"addresses_question": boolean, "specific": boolean, "actionable": boolean, "evidence": string}`
+}
+
 function unavailableVote(judge: Judge, a: JudgeAnswer, reason: string): Vote {
   return { judge: judge.name, model: a.model, family: a.family, decision: false, impact: false, fix: false, evidence: "", valid: false, discardedReason: reason }
 }
@@ -142,6 +192,7 @@ export function tally(votes: Vote[]): Consensus {
     decision,
     impact: decision && majority((v) => v.impact),
     fix: decision && majority((v) => v.fix),
+    constructive: decision && majority((v) => v.constructive === true),
     validCount: valid.length,
     unanimous: valid.length > 0 && valid.every((v) => v.decision === valid[0].decision),
     votes,
@@ -161,6 +212,8 @@ export type GradeInput = {
   verdict: string
   candidateName?: string
   candidateEmail?: string
+  /** SCR-1: scored with a checklist, reported but not weighted into the score yet. */
+  followUps?: Array<{ question: string; answer: string }>
 }
 
 export async function gradeSubmission(
@@ -168,7 +221,9 @@ export async function gradeSubmission(
   key: AnswerKey,
   ask: Asker,
   panel: Judge[] = getPanel(),
+  opts: { examples?: Example[] } = {},
 ): Promise<Result> {
+  const examples = opts.examples ?? []
   const identity = { name: input.candidateName, email: input.candidateEmail }
   // FB-1: judges only ever see the anonymized text, and evidence is checked against it.
   const comments: Comment[] = input.comments.map((c) => ({ ...c, text: redact(c.text, identity) }))
@@ -184,7 +239,7 @@ export async function gradeSubmission(
   }
 
   const councilIssue = async (item: KeyItem, comment: Comment): Promise<Consensus> => {
-    const answers = await askAll(issuePrompt(item, comment), `issue:${item.id}`)
+    const answers = await askAll(issuePrompt(item, comment, pickExamples(examples, item.id, comment.text)), `issue:${item.id}`)
     const votes: Vote[] = answers.map((a, idx) => {
       const judge = panel[idx]
       if ("error" in a) return unavailableVote(judge, a, "judge unavailable")
@@ -194,7 +249,7 @@ export async function gradeSubmission(
       const evidence = typeof j.evidence === "string" ? j.evidence : ""
       const vote: Vote = {
         judge: judge.name, model: a.model, family: a.family, decision,
-        impact: j.states_impact === true, fix: j.proposes_fix === true, evidence, valid: true,
+        impact: j.states_impact === true, fix: j.proposes_fix === true, constructive: j.constructive === true, evidence, valid: true,
       }
       if (decision && !evidenceIsReal(evidence, comment.text)) {
         vote.valid = false
@@ -341,9 +396,40 @@ export async function gradeSubmission(
       commentFile: st?.comment.file ?? null,
       split,
       lowQuorum,
+      constructive: consensus?.decision ? consensus.constructive : undefined,
       votes: consensus?.votes ?? [],
     }
   })
+
+  // SCR-1: follow-up answers, one checklist per answer.
+  let followUpQuality: Result["followUpQuality"]
+  const fus = (input.followUps ?? []).filter((f) => f.answer.trim())
+  if (fus.length) {
+    const scored = await Promise.all(
+      fus.map(async (f) => {
+        const text = redact(f.answer, identity)
+        const answers = await askAll(followUpPrompt(f.question, text), "followup")
+        const valid = answers
+          .map((a) => ("error" in a ? null : parseJson(a.text)))
+          .filter((j): j is Record<string, unknown> => !!j)
+          .filter((j) => {
+            const any = j.addresses_question === true || j.specific === true || j.actionable === true
+            return !any || evidenceIsReal(typeof j.evidence === "string" ? j.evidence : "", text)
+          })
+        const maj = (k: string) => valid.length >= 2 && valid.filter((j) => j[k] === true).length > valid.length / 2
+        const score = ["addresses_question", "specific", "actionable"].filter(maj).length
+        return { question: f.question, score, votes: valid.length }
+      }),
+    )
+    const value = scored.reduce((s2, x) => s2 + x.score, 0) / (3 * scored.length)
+    followUpQuality = { value, detail: `${scored.map((x) => x.score).join(" + ")} of ${3 * scored.length} checklist points`, answers: scored }
+  }
+
+  // SCR-2: communication = share of found issues explained constructively.
+  const foundIssues = items.filter((i) => i.kind === "issue" && i.outcome === "found")
+  const communication = foundIssues.length
+    ? { value: foundIssues.filter((i) => i.constructive).length / foundIssues.length, detail: `${foundIssues.filter((i) => i.constructive).length} / ${foundIssues.length} found issues explained specifically and actionably` }
+    : undefined
 
   const score = computeScore({
     items,
@@ -370,6 +456,9 @@ export async function gradeSubmission(
     },
     modelsUsed: [...modelsUsed].sort(),
     callCount,
+    ...(followUpQuality ? { followUpQuality } : {}),
+    ...(communication ? { communication } : {}),
+    ...(examples.length ? { ragExamples: examples.length } : {}),
     gradedAt: Date.now(),
   }
 }
@@ -379,6 +468,11 @@ export const grade = internalAction({
   handler: async (ctx, args) => {
     const sub = await ctx.runQuery(internal.submissions.getInternal, { id: args.submissionId })
     if (!sub) return
+    if (SCENARIO_META[sub.scenarioId]?.kind === "build") {
+      const result = gradeBuild(sub.scenarioId, sub.build?.code ?? "", sub.build?.events ?? [])
+      await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
+      return
+    }
     const key = ANSWER_KEYS[sub.scenarioId]
     if (!key) {
       await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error: "Unknown scenario" })
@@ -386,11 +480,26 @@ export const grade = internalAction({
     }
     const traces: Trace[] = []
     try {
+      const meta = SCENARIO_META[sub.scenarioId]
+      const config = await ctx.runQuery(internal.items.configInternal, { scenarioId: sub.scenarioId })
+      const examples = process.env.RAG_EXAMPLES === "on"
+        ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId })
+        : []
+      const configured = applyConfig(key, config)
       const result = await gradeSubmission(
-        { comments: sub.comments, verdict: sub.verdict, candidateName: sub.candidateName, candidateEmail: sub.candidateEmail },
-        key,
+        {
+          comments: sub.comments,
+          verdict: sub.verdict,
+          candidateName: sub.candidateName,
+          candidateEmail: sub.candidateEmail,
+          followUps: meta?.kind === "code" ? sub.followUps : undefined,
+        },
+        configured.key,
         liveAsker(traces),
+        undefined,
+        { examples },
       )
+      if (configured.note) result.configNote = configured.note
       await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
     } catch (err) {
       await ctx.runMutation(internal.submissions.saveError, {

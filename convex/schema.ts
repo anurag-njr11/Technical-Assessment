@@ -41,7 +41,24 @@ export const outcomeValidator = v.union(
   v.literal("missed"),
   v.literal("false_alarm"),
   v.literal("clean"),
+  // M3: the candidate never triggered this planted fault; excluded from scoring.
+  v.literal("not_exposed"),
 )
+
+export const buildEventValidator = v.object({
+  id: v.string(),
+  t: v.number(),
+  type: v.union(
+    v.literal("ai_prompt"),
+    v.literal("ai_response"),
+    v.literal("fault_injected"),
+    v.literal("accept_suggestion"),
+    v.literal("reject_suggestion"),
+    v.literal("test_run"),
+    v.literal("file_open"),
+  ),
+  data: v.optional(v.string()),
+})
 
 export const extraClassValidator = v.union(
   v.literal("valid_extra"),
@@ -67,6 +84,7 @@ export const voteValidator = v.object({
   decision: v.boolean(),
   impact: v.boolean(),
   fix: v.boolean(),
+  constructive: v.optional(v.boolean()),
   evidence: v.string(),
   valid: v.boolean(),
   discardedReason: v.optional(v.string()),
@@ -97,6 +115,7 @@ export const itemResultValidator = v.object({
   commentFile: v.union(v.string(), v.null()),
   split: v.boolean(),
   lowQuorum: v.optional(v.boolean()),
+  constructive: v.optional(v.boolean()),
   overridden: v.optional(v.boolean()),
   votes: v.array(voteValidator),
 })
@@ -152,6 +171,17 @@ export const resultValidator = v.object({
   ),
   modelsUsed: v.optional(v.array(v.string())),
   callCount: v.optional(v.number()),
+  // SCR-1 / SCR-2: reported alongside the score, not yet weighted into it.
+  followUpQuality: v.optional(
+    v.object({
+      value: v.number(),
+      detail: v.string(),
+      answers: v.array(v.object({ question: v.string(), score: v.number(), votes: v.number() })),
+    }),
+  ),
+  communication: v.optional(v.object({ value: v.number(), detail: v.string() })),
+  ragExamples: v.optional(v.number()),
+  configNote: v.optional(v.string()),
   // Set once a human override has been applied (HR-2/3).
   machine: v.optional(v.object({ overall: v.number(), band: v.string() })),
   overrideCount: v.optional(v.number()),
@@ -185,6 +215,19 @@ export default defineSchema({
     comments: v.array(commentValidator),
     followUps: v.array(followUpValidator),
     autoSubmitted: v.optional(v.boolean()),
+    // M3 only: final code and the recorded trajectory.
+    build: v.optional(v.object({ code: v.string(), events: v.array(buildEventValidator) })),
+    // TR-4: recruiter chose to share the results summary with the candidate.
+    released: v.optional(v.boolean()),
+    // TR-5: candidate appeal, routed to the human review queue.
+    appeal: v.optional(
+      v.object({
+        text: v.string(),
+        at: v.number(),
+        status: v.union(v.literal("open"), v.literal("resolved")),
+        response: v.optional(v.string()),
+      }),
+    ),
     status: v.union(
       v.literal("grading"),
       v.literal("graded"),
@@ -220,11 +263,19 @@ export default defineSchema({
     ),
     createdBy: v.id("users"),
     createdAt: v.number(),
+    // CU-3: candidates invited to a battery share a group token.
+    groupToken: v.optional(v.string()),
+    batteryId: v.optional(v.string()),
+    // CU-6: an internal engineer taking the assessment to set local norms.
+    benchmark: v.optional(v.boolean()),
+    // FB-3: self-identified group, collected lawfully and with consent.
+    group: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     deadline: v.optional(v.number()),
     submissionId: v.optional(v.id("submissions")),
   })
     .index("by_token", ["token"])
+    .index("by_group", ["groupToken"])
     .index("by_createdAt", ["createdAt"]),
 
   // FR-C-13: server-side draft of an in-progress attempt.
@@ -234,8 +285,44 @@ export default defineSchema({
     comments: v.array(commentValidator),
     verdict: v.optional(verdictValidator),
     answers: v.array(v.string()),
+    code: v.optional(v.string()),
+    events: v.optional(v.array(buildEventValidator)),
     updatedAt: v.number(),
   }).index("by_candidate", ["candidateId"]),
+
+  // SB-4 / CU-2: workspace scoring configuration within validated guardrails.
+  itemSettings: defineTable({
+    scenarioId: v.string(),
+    itemId: v.string(),
+    enabled: v.boolean(),
+    updatedBy: v.string(),
+    updatedAt: v.number(),
+  }).index("by_scenario", ["scenarioId"]),
+  emphasis: defineTable({
+    category: v.string(),
+    multiplier: v.number(),
+    updatedBy: v.string(),
+    updatedAt: v.number(),
+  }).index("by_category", ["category"]),
+
+  // CU-7: hiring outcome and 6-month manager rating, for predictive validity.
+  outcomes: defineTable({
+    submissionId: v.id("submissions"),
+    hired: v.boolean(),
+    rating: v.optional(v.number()),
+    recordedBy: v.string(),
+    at: v.number(),
+  }).index("by_submission", ["submissionId"]),
+
+  // EX-5: experiment log.
+  experiments: defineTable({
+    hypothesis: v.string(),
+    change: v.string(),
+    result: v.string(),
+    decision: v.union(v.literal("adopt"), v.literal("reject"), v.literal("pending")),
+    by: v.string(),
+    at: v.number(),
+  }),
 
   // SEC-15: fixed-window counters for public endpoints.
   rateLimits: defineTable({

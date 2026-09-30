@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel"
 import { requireRecruiter } from "./access"
 import { effectiveResult, loadOverrides } from "./submissions"
 import { outcomeValidator } from "./schema"
+import { SCENARIO_META } from "./answerKey"
 
 // Human review queue (spec §15.4). Escalated submissions wait here; a
 // reviewer confirms or overrides item outcomes / comment classes with a
@@ -25,14 +26,22 @@ export const queue = query({
     await requireRecruiter(ctx)
     const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)
     return rows
-      .filter((r) => r.status === "graded" && r.result?.needsReview && r.humanReview?.status !== "resolved")
+      .filter(
+        (r) =>
+          r.status === "graded" &&
+          ((r.result?.needsReview && r.humanReview?.status !== "resolved") || r.appeal?.status === "open"),
+      )
       .map((r) => ({
         _id: r._id,
         candidateName: r.candidateName,
         submittedAt: r.submittedAt,
         overall: r.result!.overall,
         band: r.result!.band,
-        reasons: r.result!.reviewReasons,
+        reasons: [
+          ...(r.appeal?.status === "open" ? [`Candidate appeal: "${r.appeal.text.slice(0, 160)}"`] : []),
+          ...(r.humanReview?.status === "resolved" ? [] : r.result!.reviewReasons),
+        ],
+        appeal: r.appeal?.status === "open",
         overrideCount: r.result!.overrideCount ?? 0,
       }))
   },
@@ -70,6 +79,12 @@ async function recompute(ctx: MutationCtx, id: Id<"submissions">) {
   await ctx.db.patch(id, { machineResult: machine, result: effectiveResult(sub, machine, overrides) })
 }
 
+function noBuildOverrides(scenarioId: string) {
+  if (SCENARIO_META[scenarioId]?.kind === "build") {
+    throw new Error("Directed Build pilot results can't be overridden yet. Resolve the review with a note instead.")
+  }
+}
+
 function checkJustification(text: string) {
   const t = text.trim()
   if (t.length < MIN_JUSTIFICATION) throw new Error(`Write a justification (at least ${MIN_JUSTIFICATION} characters).`)
@@ -91,6 +106,7 @@ export const overrideItem = mutation({
     const justification = checkJustification(args.justification)
     const sub = await ctx.db.get(args.submissionId)
     if (!sub || sub.status !== "graded" || !sub.result) throw new Error("Only graded submissions can be reviewed.")
+    noBuildOverrides(sub.scenarioId)
     const item = sub.result.items.find((i) => i.id === args.itemId)
     if (!item) throw new Error("Unknown item.")
     const allowed = item.kind === "issue" ? ["found", "missed"] : ["clean", "false_alarm"]
@@ -168,6 +184,8 @@ export const resolve = mutation({
     if (!sub || sub.status !== "graded") throw new Error("Only graded submissions can be resolved.")
     await ctx.db.patch(args.submissionId, {
       humanReview: { status: "resolved", by: await reviewerEmail(ctx, me.userId), at: Date.now(), note },
+      // TR-5: resolving also answers an open appeal; the note is shown to the candidate.
+      ...(sub.appeal?.status === "open" ? { appeal: { ...sub.appeal, status: "resolved" as const, response: note } } : {}),
     })
   },
 })

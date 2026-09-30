@@ -51,6 +51,7 @@ const outcomeStyles: Record<string, { label: string; cls: string }> = {
   missed: { label: 'Missed', cls: 'bg-destructive-soft text-destructive border-destructive/30' },
   false_alarm: { label: 'False alarm', cls: 'bg-warning-soft text-warning border-warning/30' },
   clean: { label: 'Left alone', cls: 'bg-success-soft text-success border-success/30' },
+  not_exposed: { label: 'Not exposed', cls: 'bg-muted text-muted-foreground border-border' },
 }
 
 export function OutcomeChip({ outcome }: { outcome: string }) {
@@ -84,6 +85,7 @@ export function BandChip({ band, score }: { band?: string; score?: number }) {
 const NAV = [
   { to: '/recruiter', label: 'Candidates' },
   { to: '/review', label: 'Review queue' },
+  { to: '/items', label: 'Item bank' },
   { to: '/reliability', label: 'Reliability' },
 ] as const
 

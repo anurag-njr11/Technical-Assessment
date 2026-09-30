@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { AlertTriangle, ArrowLeft, Loader2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Loader2, Printer, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react'
+import { MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
+import { interviewQuestions } from '@/lib/interview'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, OutcomeChip, RecruiterNav, SeverityChip, TopBar, cleanError } from '@/components/rb'
@@ -46,12 +48,33 @@ type ExtraT = { commentId?: string; text: string; file: string; line: number; cl
 type SubComment = { id: string; file: string; line: number; text: string }
 type Component = { value: number; detail: string }
 
-const COMPONENT_LABELS: Record<string, string> = {
-  detection: 'Detection (severity-weighted)',
-  precision: 'Precision',
-  decoyDiscipline: 'Decoy discipline',
-  explanationQuality: 'Explanation quality',
-  verdict: 'Verdict',
+const COMPONENT_LABELS: Record<string, Record<string, string>> = {
+  code: {
+    detection: 'Detection (severity-weighted)',
+    precision: 'Precision',
+    decoyDiscipline: 'Decoy discipline',
+    explanationQuality: 'Explanation quality',
+    verdict: 'Verdict',
+  },
+  decision: {
+    detection: 'Flaws identified (severity-weighted)',
+    precision: 'Precision',
+    decoyDiscipline: 'Sound ideas kept',
+    explanationQuality: 'Impact & alternatives',
+    verdict: 'Decision',
+  },
+  build: {
+    detection: 'Exposed faults fixed',
+    precision: 'Calibrated trust',
+    decoyDiscipline: 'Testing',
+    explanationQuality: 'Instruction quality (heuristic)',
+    verdict: 'Task completion',
+  },
+}
+const ITEMS_TITLE: Record<string, string> = {
+  code: 'Planted issues & decoys',
+  decision: 'Reasoning flaws & sound ideas',
+  build: 'Planted assistant faults',
 }
 
 function Report() {
@@ -64,6 +87,9 @@ function Report() {
   const back = (
     <>
       <RecruiterNav />
+      <button onClick={() => window.print()} className="hidden items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground sm:inline-flex print:hidden">
+        <Printer className="size-4" /> PDF
+      </button>
       <Link to="/recruiter" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Candidates
       </Link>
@@ -104,8 +130,13 @@ function Report() {
         callCount?: number
         reviewReasons: string[]
         judges: Array<{ name: string; model: string }>
+        followUpQuality?: { value: number; detail: string; answers: Array<{ question: string; score: number; votes: number }> }
+        communication?: { value: number; detail: string }
+        configNote?: string
       }
     | undefined
+  const kind = SCENARIOS[sub.scenarioId]?.kind ?? 'code'
+  const labels = COMPONENT_LABELS[kind]
 
   return (
     <div className="min-h-screen bg-background">
@@ -119,7 +150,7 @@ function Report() {
             <div className="min-w-0 flex-1">
               <h1 className="text-lg font-semibold">{sub.candidateName}</h1>
               <p className="text-sm text-muted-foreground">
-                Backend Engineer · {sub.level} · {new Date(sub.submittedAt).toLocaleString()} · Verdict:{' '}
+                {MODULE_LABEL[kind]} · {SCENARIOS[sub.scenarioId]?.ticketId ?? sub.scenarioId} · {sub.level} · {new Date(sub.submittedAt).toLocaleString()} · Verdict:{' '}
                 {sub.verdict === 'approve' ? 'Approve' : sub.verdict === 'none' ? 'None' : 'Request changes'}
                 {sub.autoSubmitted ? ' · Auto-submitted at the time limit' : ''}
               </p>
@@ -187,7 +218,7 @@ function Report() {
                     <div key={key}>
                       <div className="flex flex-wrap justify-between gap-2 text-[13px]">
                         <span>
-                          {COMPONENT_LABELS[key] ?? key}{' '}
+                          {labels[key] ?? key}{' '}
                           <span className="text-muted-foreground">· weight {Math.round((result.weights[key] ?? 0) * 100)}%</span>
                         </span>
                         <span className="font-mono text-muted-foreground">{c.detail} · {Math.round(c.value * 100)}%</span>
@@ -203,8 +234,23 @@ function Report() {
                 </div>
               </section>
 
+              {result.followUpQuality || result.communication || result.configNote ? (
+                <section className="rounded-xl border border-border bg-card p-6 text-sm">
+                  <h2 className="font-semibold">Also measured (not yet in the score)</h2>
+                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {result.communication ? (
+                      <div><dt className="text-muted-foreground">Communication (SCR-2)</dt><dd><span className="font-mono">{Math.round(result.communication.value * 100)}%</span> · {result.communication.detail}</dd></div>
+                    ) : null}
+                    {result.followUpQuality ? (
+                      <div><dt className="text-muted-foreground">Follow-up reasoning (SCR-1)</dt><dd><span className="font-mono">{Math.round(result.followUpQuality.value * 100)}%</span> · {result.followUpQuality.detail}</dd></div>
+                    ) : null}
+                  </dl>
+                  {result.configNote ? <p className="mt-3 text-xs text-muted-foreground">Workspace scoring configuration applied: {result.configNote}</p> : null}
+                </section>
+              ) : null}
+
               <section className="rounded-xl border border-border bg-card">
-                <h2 className="px-6 pt-5 text-sm font-semibold">Planted issues & decoys</h2>
+                <h2 className="px-6 pt-5 text-sm font-semibold">{ITEMS_TITLE[kind]}</h2>
                 <div className="mt-3 divide-y divide-border">
                   {result.items.map((item) => (
                     <ItemRow key={item.id} item={item} submissionId={sub._id} comments={sub.comments} />
@@ -233,16 +279,27 @@ function Report() {
                   </div>
                 </section>
               ) : null}
-              <HumanReview submissionId={sub._id} needsReview={result.needsReview} resolved={sub.humanReview ?? null} />
+              {sub.build ? <Trajectory code={sub.build.code} events={sub.build.events} /> : null}
+              <InterviewGuide items={result.items} kind={kind} />
+              {sub.appeal ? (
+                <section className="rounded-xl border border-warning/30 bg-warning-soft p-5 text-sm">
+                  <div className="font-semibold text-warning">Candidate appeal · {sub.appeal.status}</div>
+                  <p className="mt-1">“{sub.appeal.text}”</p>
+                  {sub.appeal.response ? <p className="mt-2 text-muted-foreground">Response: {sub.appeal.response}</p> : <p className="mt-2 text-muted-foreground">Resolve it under Human review below; your note is shown to the candidate.</p>}
+                </section>
+              ) : null}
+              <HumanReview submissionId={sub._id} needsReview={result.needsReview || sub.appeal?.status === 'open'} resolved={sub.humanReview ?? null} />
             </>
           ) : null}
         </div>
 
         <aside className="space-y-5">
-          {result ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
-          {result ? <EvalPanel submissionId={sub._id} result={result} /> : null}
-          <section className="rounded-xl border border-border bg-card p-5">
-            <h2 className="text-sm font-semibold">Follow-up answers</h2>
+          {result ? <SharePanel submissionId={sub._id} released={!!sub.released} token={null} /> : null}
+          {result ? <InsightsPanel submissionId={sub._id} /> : null}
+          {result && kind !== 'build' ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
+          {result && kind !== 'build' ? <EvalPanel submissionId={sub._id} result={result} /> : null}
+          {sub.followUps.length ? <section className="rounded-xl border border-border bg-card p-5">
+            <h2 className="text-sm font-semibold">{kind === 'decision' ? 'Critique' : 'Follow-up answers'}</h2>
             <div className="mt-3 space-y-4">
               {sub.followUps.map((f, i) => (
                 <div key={i}>
@@ -251,10 +308,14 @@ function Report() {
                 </div>
               ))}
             </div>
-            <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
-              Not yet scored — use these to guide the follow-up interview.
-            </p>
-          </section>
+            {kind === 'code' ? (
+              <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                {result?.followUpQuality
+                  ? `Checklist-scored (${result.followUpQuality.answers.map((a) => `${a.score}/3`).join(', ')}), not yet weighted into the score.`
+                  : 'Not scored for this submission. Use these to guide the follow-up interview.'}
+              </p>
+            ) : null}
+          </section> : null}
 
           {result ? (
             <section className="rounded-xl border border-border bg-card p-5">
@@ -661,3 +722,129 @@ function DeletePanel({ submissionId }: { submissionId: string }) {
   )
 }
 
+
+// ---------------------------------------------------------------------------
+// FR-R-16 interview guide, M3 trajectory, TR-4 sharing, SCR-3/5 + CU-7 insights
+// ---------------------------------------------------------------------------
+
+function InterviewGuide({ items, kind }: { items: ItemT[]; kind: string }) {
+  const qs = interviewQuestions(items, kind)
+  if (!qs.length) return null
+  return (
+    <section className="rounded-xl border border-border bg-card p-6">
+      <h2 className="text-sm font-semibold">Suggested interview questions</h2>
+      <p className="mt-1 text-xs text-muted-foreground">Generated from this candidate's gaps and strengths. Structured questions, asked of every candidate with the same gap, are the most predictive.</p>
+      <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
+        {qs.map((q) => <li key={q.q}><span>{q.q}</span> <span className="text-xs text-muted-foreground">({q.why})</span></li>)}
+      </ol>
+    </section>
+  )
+}
+
+function Trajectory({ code, events }: { code: string; events: Array<{ id: string; t: number; type: string; data?: string }> }) {
+  const label: Record<string, string> = {
+    ai_prompt: 'Asked', ai_response: 'Assistant', fault_injected: 'Planted fault', accept_suggestion: 'Accepted', reject_suggestion: 'Dismissed', test_run: 'Ran tests', file_open: 'Opened',
+  }
+  const show = (e: { type: string; data?: string }) => {
+    if (e.type === 'ai_response') {
+      try {
+        return (JSON.parse(e.data ?? '{}') as { text?: string }).text ?? ''
+      } catch {
+        return e.data ?? ''
+      }
+    }
+    if (e.type === 'fault_injected') return (e.data ?? '').split('|')[0]
+    return e.data ?? ''
+  }
+  return (
+    <section className="rounded-xl border border-border bg-card p-6">
+      <h2 className="text-sm font-semibold">Trajectory ({events.length} events)</h2>
+      <ol className="mt-3 max-h-80 space-y-1.5 overflow-y-auto text-sm">
+        {events.map((e) => (
+          <li key={e.id} className="flex gap-3">
+            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{Math.floor(e.t / 60000)}:{String(Math.floor((e.t % 60000) / 1000)).padStart(2, '0')}</span>
+            <span className={cn('w-24 shrink-0 text-xs font-semibold', e.type === 'fault_injected' ? 'text-destructive' : '')}>{label[e.type] ?? e.type}</span>
+            <span className="min-w-0 truncate text-muted-foreground">{show(e)}</span>
+          </li>
+        ))}
+      </ol>
+      <h3 className="mt-5 text-sm font-semibold">Final code</h3>
+      <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-3 font-mono text-xs">{code}</pre>
+    </section>
+  )
+}
+
+function SharePanel({ submissionId, released }: { submissionId: string; released: boolean; token: string | null }) {
+  const set = useMutation(api.submissions.setReleased)
+  const [error, setError] = useState('')
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 print:hidden">
+      <h2 className="text-sm font-semibold">Candidate feedback</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {released
+          ? 'The candidate can see a summary (score, components, strengths and gaps by category) on their results page. Planted issues stay private.'
+          : 'Share a summary of these results with the candidate on their results page.'}
+      </p>
+      <button
+        onClick={() => set({ id: submissionId as Id<'submissions'>, released: !released }).catch((err) => setError(cleanError(err)))}
+        className="mt-3 rounded-md border border-border px-3 py-1.5 text-sm"
+      >
+        {released ? 'Stop sharing' : 'Share results with candidate'}
+      </button>
+      {error ? <p className="mt-1 text-[13px] text-destructive">{error}</p> : null}
+    </section>
+  )
+}
+
+function InsightsPanel({ submissionId }: { submissionId: string }) {
+  const data = useQuery(api.insights.forSubmission, { id: submissionId as Id<'submissions'> })
+  const setOutcome = useMutation(api.insights.setOutcome)
+  const [error, setError] = useState('')
+  if (!data) return null
+  const save = (hired: boolean, rating?: number) =>
+    setOutcome({ id: submissionId as Id<'submissions'>, hired, rating }).catch((err) => setError(cleanError(err)))
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 text-sm">
+      <h2 className="font-semibold">Context</h2>
+      <dl className="mt-2 space-y-1.5">
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">vs your engineers</dt>
+          <dd className="font-mono">{data.percentile === null ? '—' : `${data.percentile}th pct`} <span className="text-xs text-muted-foreground">n={data.benchmarkN}</span></dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">IRT ability (θ)</dt>
+          <dd className="font-mono">{data.ability ? `${data.ability.theta.toFixed(2)} ± ${(1.96 * data.ability.se).toFixed(2)}` : '—'}</dd>
+        </div>
+      </dl>
+      <p className="mt-1 text-xs text-muted-foreground">Percentile needs internal-engineer benchmarks; θ needs 3+ graded submissions on this scenario.</p>
+      <div className="mt-4 border-t border-border pt-3 print:hidden">
+        <div className="text-xs font-semibold">Hiring outcome</div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select
+            value={data.outcome ? (data.outcome.hired ? 'hired' : 'not') : ''}
+            onChange={(e) => e.target.value && save(e.target.value === 'hired', e.target.value === 'hired' ? data.outcome?.rating ?? undefined : undefined)}
+            aria-label="Hiring outcome"
+            className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+          >
+            <option value="">Not recorded</option>
+            <option value="hired">Hired</option>
+            <option value="not">Not hired</option>
+          </select>
+          {data.outcome?.hired ? (
+            <select
+              value={data.outcome.rating ?? ''}
+              onChange={(e) => save(true, e.target.value ? Number(e.target.value) : undefined)}
+              aria-label="Six-month manager rating"
+              className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+            >
+              <option value="">6-month rating…</option>
+              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} / 5</option>)}
+            </select>
+          ) : null}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">Used to measure whether scores predict job performance.</p>
+        {error ? <p className="mt-1 text-[13px] text-destructive">{error}</p> : null}
+      </div>
+    </section>
+  )
+}

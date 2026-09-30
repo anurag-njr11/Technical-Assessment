@@ -230,6 +230,8 @@ function Reliability() {
           </section>
         ) : null}
 
+        <WorkspacePanels dashboard={d} />
+
         <section className="mt-5 rounded-xl border border-border bg-card p-6">
           <h2 className="text-sm font-semibold">Recent evaluation runs (EX-1)</h2>
           <div className="mt-3 overflow-x-auto">
@@ -263,5 +265,95 @@ function Reliability() {
         </section>
       </main>
     </div>
+  )
+}
+
+// FB-3 / SM-6 adverse impact, CU-7 predictive validity, EX-5 experiment log, CO-1 audit pack.
+function WorkspacePanels({ dashboard }: { dashboard: unknown }) {
+  const w = useQuery(api.insights.workspace)
+  const add = useMutation(api.insights.addExperiment)
+  const [form, setForm] = useState({ hypothesis: '', change: '', result: '', decision: 'pending' as 'adopt' | 'reject' | 'pending' })
+  const [err, setErr] = useState('')
+  if (!w) return null
+  const ai = w.adverseImpact
+  const auditPack = () => {
+    const blob = new Blob([JSON.stringify({ generatedAt: new Date().toISOString(), reliability: dashboard, fairness: w.adverseImpact, validity: w.validity, experiments: w.experiments }, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `reviewbench-audit-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  return (
+    <>
+      <section className="mt-5 grid gap-5 lg:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="text-sm font-semibold">Adverse impact (FB-3, SM-6)</h2>
+            <StatusTag status={ai.pass === null ? 'nodata' : ai.pass ? 'pass' : 'fail'} />
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">Selection = score ≥ {w.passScore}. Four-fifths rule: every group's rate must be ≥ 80% of the highest. Uses only self-identified, consented group data; internal engineers excluded.</p>
+          <table className="mt-3 w-full text-sm">
+            <thead><tr className="text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground"><th className="py-1.5 font-semibold">Group</th><th className="font-semibold">n</th><th className="font-semibold">Selected</th><th className="font-semibold">Impact ratio</th></tr></thead>
+            <tbody>
+              {ai.rows.length === 0 ? (
+                <tr><td colSpan={4} className="py-3 text-muted-foreground">No group data yet. Add it (optional) when inviting candidates.</td></tr>
+              ) : ai.rows.map((r) => (
+                <tr key={r.group} className="border-t border-border font-mono">
+                  <td className="py-1.5 font-sans">{r.group}</td><td>{r.n}</td><td>{Math.round(r.rate * 100)}%</td><td>{r.ratio.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h2 className="text-sm font-semibold">Predictive validity (CU-7)</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Correlation between assessment score and 6-month manager rating for hired candidates (record outcomes on each report).</p>
+          <p className="mt-3 font-mono text-2xl font-semibold">{Number.isFinite(w.validity.r) ? `r = ${w.validity.r.toFixed(2)}` : '—'}</p>
+          <p className="text-xs text-muted-foreground">n = {w.validity.n} hired candidates with ratings (needs 3+)</p>
+          <h3 className="mt-5 text-xs font-semibold">Mean score by module</h3>
+          <ul className="mt-2 space-y-1 text-sm">
+            {w.byModule.map((m) => (
+              <li key={m.scenarioId} className="flex justify-between gap-3"><span className="truncate">{m.title}</span><span className="font-mono text-muted-foreground">{m.mean ?? '—'} (n={m.n})</span></li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="mt-5 rounded-xl border border-border bg-card p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Experiment log (EX-5)</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Record every change to prompts, rubric, models or weights: the hypothesis, what changed, what the gate said, and the decision.</p>
+          </div>
+          <button onClick={auditPack} className="rounded-md border border-border px-3 py-1.5 text-sm">Download audit pack (JSON)</button>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <input value={form.hypothesis} onChange={(e) => setForm({ ...form, hypothesis: e.target.value })} placeholder="Hypothesis" aria-label="Hypothesis" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          <input value={form.change} onChange={(e) => setForm({ ...form, change: e.target.value })} placeholder="Change made" aria-label="Change made" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          <input value={form.result} onChange={(e) => setForm({ ...form, result: e.target.value })} placeholder="Result (e.g. gate: κ 0.78 → 0.81)" aria-label="Result" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <select value={form.decision} onChange={(e) => setForm({ ...form, decision: e.target.value as typeof form.decision })} aria-label="Decision" className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              <option value="pending">Pending</option><option value="adopt">Adopt</option><option value="reject">Reject</option>
+            </select>
+            <button
+              onClick={() => add(form).then(() => setForm({ hypothesis: '', change: '', result: '', decision: 'pending' })).catch((e) => setErr(cleanError(e)))}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            >
+              Log
+            </button>
+          </div>
+        </div>
+        {err ? <p className="mt-2 text-[13px] text-destructive">{err}</p> : null}
+        <ul className="mt-4 divide-y divide-border text-sm">
+          {w.experiments.map((e) => (
+            <li key={e._id} className="py-2">
+              <span className="font-semibold capitalize">{e.decision}</span> · {e.hypothesis} <span className="text-muted-foreground">· {e.change}{e.result ? ` · ${e.result}` : ''} · {e.by}, {new Date(e.at).toLocaleDateString()}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </>
   )
 }

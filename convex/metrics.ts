@@ -176,3 +176,77 @@ export function fitWeights(
   const weights = Object.fromEntries(COMPONENT_KEYS.map((k, i) => [k, Math.round(best.w[i] * 100) / 100])) as ComponentVec
   return { weights, maeBefore: baseline, maeAfter: best.err, n: samples.length }
 }
+
+// ---------------------------------------------------------------------------
+// SCR-3: Rasch (1PL IRT) with weak normal priors (MAP), so perfect and zero
+// scores still get finite estimates. responses[p][i] = 1 found, 0 missed, null n/a.
+// ---------------------------------------------------------------------------
+
+export function rasch(responses: Array<Array<0 | 1 | null>>, iters = 60) {
+  const P = responses.length
+  const I = P ? responses[0].length : 0
+  const theta = new Array<number>(P).fill(0)
+  const b = new Array<number>(I).fill(0)
+  const prob = (t: number, d: number) => 1 / (1 + Math.exp(-(t - d)))
+  for (let it = 0; it < iters; it++) {
+    for (let p = 0; p < P; p++) {
+      let g = -theta[p]
+      let h = -1
+      for (let i = 0; i < I; i++) {
+        const x = responses[p][i]
+        if (x === null) continue
+        const pr = prob(theta[p], b[i])
+        g += x - pr
+        h -= pr * (1 - pr)
+      }
+      theta[p] = Math.max(-6, Math.min(6, theta[p] - g / h))
+    }
+    for (let i = 0; i < I; i++) {
+      let g = -b[i] / 4
+      let h = -1 / 4
+      for (let p = 0; p < P; p++) {
+        const x = responses[p][i]
+        if (x === null) continue
+        const pr = prob(theta[p], b[i])
+        g -= x - pr
+        h -= pr * (1 - pr)
+      }
+      b[i] = Math.max(-6, Math.min(6, b[i] - g / h))
+    }
+  }
+  const se = theta.map((t, p) => {
+    let info = 1
+    for (let i = 0; i < I; i++) if (responses[p][i] !== null) info += prob(t, b[i]) * (1 - prob(t, b[i]))
+    return 1 / Math.sqrt(info)
+  })
+  return { theta, se, b }
+}
+
+// ---------------------------------------------------------------------------
+// FB-3 / SM-6: four-fifths rule. CU-7: predictive validity.
+// ---------------------------------------------------------------------------
+
+export function fourFifths(groups: Array<{ group: string; n: number; passed: number }>) {
+  const withData = groups.filter((g) => g.n > 0)
+  const rates = withData.map((g) => ({ ...g, rate: g.passed / g.n }))
+  const top = Math.max(0, ...rates.map((r) => r.rate))
+  const rows = rates.map((r) => ({ ...r, ratio: top > 0 ? r.rate / top : 1 }))
+  const minRatio = rows.length ? Math.min(...rows.map((r) => r.ratio)) : NaN
+  return { rows, minRatio, pass: rows.length < 2 ? null : minRatio >= 0.8 }
+}
+
+export function pearson(xs: number[], ys: number[]): number {
+  const n = xs.length
+  if (n < 3) return NaN
+  const mx = mean(xs)
+  const my = mean(ys)
+  let sxy = 0
+  let sxx = 0
+  let syy = 0
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my)
+    sxx += (xs[i] - mx) ** 2
+    syy += (ys[i] - my) ** 2
+  }
+  return sxx && syy ? sxy / Math.sqrt(sxx * syy) : NaN
+}

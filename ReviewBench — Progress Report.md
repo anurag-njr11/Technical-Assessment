@@ -1,30 +1,54 @@
 # ReviewBench — Progress Report
 
-Sep 30, 2026 · @Ace · updated after the P1 + P2 build
+Sep 30, 2026 · @Ace · updated after the P3–P6 build
 
 ## Summary
 
-Phase P1 (safe to use) is built, and so is the Phase P2 reliability tooling. The code is on GitHub branch `ccr-327afa78-rdcapg`. It has **not been deployed or run against real models yet**. Several items still need the owner or real data before real candidates take the assessment.
+The website now covers all six roadmap phases, P1–P6, at demo or pilot depth. The code is on GitHub branch `ccr-327afa78-rdcapg`. It has **not been deployed or run against real models yet**. Heavy infrastructure (multi-tenancy, SSO, ATS webhooks, fine-tuning, LLM-generated scenarios) is deferred to `LATER.md`, alongside the checklist for running without Macaly.
 
-- **Built:**
-  - Single-use invite links with rate limits.
-  - Server-side autosave and a server-enforced timer with auto-submit.
-  - Extra-time accommodations and a hydration fix.
+- **P1–P2 (earlier today):**
+  - Single-use invite links, rate limits, server autosave and an enforced timer.
   - A human review queue with audited overrides.
   - Judge fallbacks from six distinct model families.
-  - The `vague_match` label and a validated result schema.
-  - Judge-call tracing and anonymization.
-  - Golden-set labelling, evaluation runs (test–retest, perturbation, adversarial, golden-set regression), a reliability dashboard and weight calibration.
-- **Verified:** 66/66 automated tests pass (up from 24). The typecheck is clean and the production build succeeds. The candidate pages render at 390 px and 1280 px with no horizontal scroll.
-- **Not yet verified:**
-  - A deploy to Macaly/Convex.
-  - Any run with the real judge models, including the new fallback model IDs.
-  - Browser QA of the recruiter pages against a live backend.
-- **Still blocking real use:**
-  - The owner must claim the workspace, deploy, and confirm the fallback models.
-  - Collect 30–50 human-graded reviews and calibrate the weights before scores inform hiring decisions.
+  - Golden set, reliability metrics, evaluation runs and the regression gate.
+- **P3 (Complete M1):**
+  - A second, mid-level code-review scenario.
+  - Follow-up answers and communication are scored (reported, not yet weighted).
+  - A candidate results page with human-review requests (appeals).
+  - A suggested interview guide and print-to-PDF reports.
+- **P4 (Modules):**
+  - M2 Decision Review (ADR-031, Postgres → MongoDB).
+  - M3 Directed Build pilot (DISC-12): a scripted AI assistant with planted faults, trajectory recorded on the server, hidden code checks, and visible tests that run in the browser.
+- **P5 (Customization):**
+  - Batteries by role and level (one link, several modules).
+  - An item bank with detection rates and IRT (Rasch) difficulty; items can be switched off and categories re-weighted within guardrails, with an automatic adverse-impact check on each change.
+  - Local norms from internal engineers, hiring outcomes with 6-month ratings, and predictive validity.
+- **P6 (Scale & compliance, partial):**
+  - Adverse-impact monitoring (four-fifths rule).
+  - A public methodology page with published weights and a candidate notice template.
+  - Audit-pack export, CSV export for ATS, an experiment log, and RAG few-shot examples behind a flag.
+- **Verified:**
+  - 79/79 automated tests pass. The typecheck is clean and the production build succeeds.
+  - Public pages render at 390 px and 1280 px with no horizontal scroll or page errors.
+- **Not verified:**
+  - A live deploy, real-model runs, and clicking through the logged-in pages. A local Convex backend couldn't be downloaded in this environment.
 
-Requirement IDs refer to *ReviewBench — Product & Technical Specification* (REVIEWBENCH\_SPEC.md, now v0.4; it has been updated to match the code).
+Requirement IDs refer to *ReviewBench — Product & Technical Specification* (REVIEWBENCH\_SPEC.md, now v0.5).
+
+## Demo script (for the presentation)
+
+1. **Landing page → Methodology:** the pipeline, the published weights, and how the checker is checked.
+2. **Recruiter dashboard:** invite yourself to the **Junior Backend** battery (one link, two modules), and to **DISC-12** separately. Tick "More options" to show the internal-benchmark and group fields.
+3. **Candidate, Code Review:** open the battery link, start ORD-482, comment on line 23 (SQL injection), refresh the page to show autosave, pick a verdict, answer the questions, submit.
+4. **Candidate, Decision Review:** continue to ADR-031, reject the recommendation, write the three sections, submit.
+5. **Candidate, Directed Build:** ask the assistant to "write the full applyDiscount function", insert it, run the visible tests, fix `CODES[code]` → `CODES[code.toUpperCase()]`, submit.
+6. **Report:** score breakdown, per-judge evidence, "Also measured", interview questions, trajectory (for DISC-12), share results with the candidate, record a hiring outcome, print to PDF.
+7. **Candidate results page (`/results?t=…`):** strengths and gaps, then request a human review.
+8. **Review queue:** the appeal appears → override an item with a justification → mark the review complete. The candidate sees the response.
+9. **Item bank:** switch an issue off or raise Security emphasis; the adverse-impact check runs.
+10. **Reliability:** run the adversarial suite; show the gate, fairness, validity, experiment log, and the audit-pack download.
+
+> Needs a deployed backend with AI credits. With no credits, grading still completes but every judge vote is "unavailable" and submissions escalate to review. The Directed Build module needs no AI at all.
 
 ## Completed
 
@@ -38,7 +62,7 @@ Requirement IDs refer to *ReviewBench — Product & Technical Specification* (RE
 | Recruiter side | Dashboard with live status and stats; evidence-backed report with per-judge votes, escalation banner, follow-ups, retry | FR-R-1–4, FR-R-7–15 |
 | Access and security | Email + password with emailed code; password reset; first-verified-account claim; owner invites/revokes/removes; server-side recruiter checks | SEC-1–13, FR-R-18–19 |
 
-### Phase P1 · Safe to use (this build)
+### Phase P1 · Safe to use (earlier today)
 
 | Blocker | What's built | Spec IDs |
 | --- | --- | --- |
@@ -79,9 +103,52 @@ Requirement IDs refer to *ReviewBench — Product & Technical Specification* (RE
 | Tracing | Every judge call is logged: stage, judge, model, family, success, latency, input/output size, output. Each report shows its call count and estimated tokens. | EX-2, NFR-OBS-1 |
 | Versioning | Rubric, prompt and scoring versions are recorded on every result and every evaluation run. | EX-1 (partial) |
 
+### Phase P3 · Complete M1 (this build)
+
+| Capability | What's built | Spec IDs |
+| --- | --- | --- |
+| More scenarios and levels | PAY-217 (Mid): partial refunds, with 6 planted issues (missing ownership check, cumulative refunds ignored, hallucinated `gateway.refund()`, gateway called before commit, full card number in logs, unvalidated amount) and 1 decoy (idempotent replay). Every candidate-visible scenario is kept in sync with the server by tests. | SC-1, SC-3–5, SC-9 |
+| Follow-up scoring | Each answer gets a checklist (addresses the question / specific / actionable) with verified evidence. Shown on the report; not weighted into the score until calibrated (open question §29.1). | SCR-1 |
+| Communication | The issue checklist adds "constructive" (specific and actionable); the report shows the share of found issues explained that way. | SCR-2 |
+| Candidate report | `/results?t=…`, only after the recruiter shares it: score, component breakdown in plain language, strengths and gaps by category. The answer key is shown only for retired scenarios. | TR-4 |
+| Appeals | The candidate requests a human review from the results page. It appears in the review queue marked "appeal"; the resolution note is shown back to the candidate. | TR-5 |
+| Interview guide | Deterministic structured questions for each missed category, incomplete explanation and false alarm. | FR-R-16 |
+| PDF export | Print-friendly report with a "PDF" button (browser print to PDF). | FR-R-17 |
+
+### Phase P4 · Modules (this build)
+
+| Capability | What's built | Spec IDs |
+| --- | --- | --- |
+| M2 Decision Review | ADR-031: context, constraints and an AI recommendation with 5 planted reasoning flaws (benchmark mismatch, breaks finance reporting, ignores ops cost and skills, no migration plan, unprofiled assumption) and 2 decoys (the index, archiving). The candidate approves or rejects, then writes three critique sections. Graded by the same council and scoring. | §7.2 |
+| M3 Directed Build (pilot) | DISC-12: editor, AI assistant and visible tests (run in a Web Worker). The assistant is a server-side scripted proxy: 3 of 8 responses carry planted faults (`> 50` instead of `>= 50`, a hallucinated `cart.getSubtotalAfterTax()`, case-sensitive codes). Every prompt, response, fault, accept/dismiss and test run is recorded on the server. Grading is deterministic: exposed faults fixed (hidden code checks), calibrated trust, testing, instruction quality (heuristic) and task completion. Faults never triggered are "not exposed" and excluded. No AI credits needed. | §7.3, §10.7 |
+
+### Phase P5 · Customization (this build)
+
+| Capability | What's built | Spec IDs |
+| --- | --- | --- |
+| Batteries | Junior Backend, Mid Backend and AI collaboration batteries (all ≤ 60 min). One link opens a landing page listing the parts; each part has its own timer. | CU-1, CU-3 |
+| Item bank | `/items`: every item's detection or false-alarm rate, sample size and Rasch difficulty. | SB-3, SCR-3 |
+| Configuration within guardrails | Owners can switch planted issues off (decoys can't be; at least half the issues must stay on) and set category emphasis between 0.5× and 1.5×. It applies to new gradings and is recorded on each result. | SB-4, CU-2 |
+| Adverse-impact check on change | Every configuration change recomputes stored results under the new settings and reports the four-fifths ratio. | FB-6, CU-8 |
+| Local norms | Invite internal engineers as "benchmark"; reports show the candidate's percentile against them. | SCR-5, CU-6 |
+| IRT ability | Rasch θ ± 95% CI on each report (3+ graded submissions per scenario). | SCR-3 |
+| Outcome tracking | Record hired / not hired and a 6-month manager rating on each report; Reliability shows the score–rating correlation. | CU-7 |
+
+### Phase P6 · Scale & compliance (partial, this build)
+
+| Capability | What's built | Spec IDs |
+| --- | --- | --- |
+| Adverse-impact monitoring | Selection rate per self-identified, consented group, with impact ratios, on Reliability. | FB-3, SM-6, CO-4 |
+| Public methodology | `/methodology`: pipeline, published weights and bands, reliability targets, candidate rights, notice template. | TR-2, TR-6, CO-1–3 |
+| Audit pack | One-click JSON export of reliability, fairness, validity and the experiment log. | CO-1, CO-5 |
+| ATS export | CSV export of the dashboard (webhooks: later). | §27 P6 |
+| Experiment log | Hypothesis / change / result / decision, on Reliability. | EX-5 |
+| RAG few-shot | With `RAG_EXAMPLES=on`, up to 2 lexically similar human-graded comments are added to each issue prompt; the count is recorded on the result. | KA-1–4 (partial) |
+| Deferred | Multi-tenancy, SSO, ATS webhooks, fine-tuned judge, shadow mode, caching/queues, retention policy: see `LATER.md`. | SEC-4, KA-5–7, EX-3 |
+
 ## Verification
 
-All 66 automated tests pass. The typecheck is clean and the production build succeeds. Nothing has been run against real models or a live Convex deployment from this environment.
+All 79 automated tests pass. The typecheck is clean and the production build succeeds. Nothing has been run against real models or a live Convex deployment from this environment.
 
 | Check | Scope | Result |
 | --- | --- | --- |
@@ -91,9 +158,11 @@ All 66 automated tests pass. The typecheck is clean and the production build suc
 | Human review | 7 tests: queue, justification + audit + recompute + golden feed, comment reclassification, overrides survive regrade, resolve, non-members blocked, owner-only deletion | 7/7 pass |
 | Statistics and scoring | 9 tests: kappa (checked by hand), Fleiss, Wilson, bootstrap, gate, weight recovery, score formula, override ordering | 9/9 pass |
 | Evaluation runs + dashboard | 4 tests: perturbation variants, adversarial suite, end-to-end retest/perturbation/adversarial/golden/baseline/gate, errored run | 4/4 pass |
-| Scenario integrity | 8 tests: the original 6 + server/candidate scenario metadata match | 8/8 pass |
+| Scenario integrity | 11 tests: answer-key isolation, visible lines and hallucination checks for every code scenario, server/client scenario and battery sync | 11/11 pass |
+| New modules and P3–P6 | 9 tests: Decision Review grading, Directed Build (fixed fault / unchanged fault / not exposed), results release + appeal + resolution, batteries, item config guardrails, Rasch, four-fifths | 9/9 pass |
+| UI components | 2 tests: Directed Build workspace render + insert suggestion; interview guide | 2/2 pass |
 | Build | Production build (`vite build`) | Pass |
-| Layout | Landing and candidate pages at 390 px and 1280 px | No horizontal overflow |
+| Layout | Landing, methodology, candidate, results, battery, item bank and reliability pages at 390 px and 1280 px | No horizontal overflow, no page errors |
 
 **Found while testing:**
 
@@ -103,7 +172,7 @@ All 66 automated tests pass. The typecheck is clean and the production build suc
 
 ## Needs fixing
 
-Eleven items remain. The first five must be done before inviting real candidates.
+Fourteen items remain. The first five must be done before inviting real candidates.
 
 | # | Priority | Issue | Impact | Fix | Spec ID |
 | --- | --- | --- | --- | --- | --- |
@@ -118,6 +187,9 @@ Eleven items remain. The first five must be done before inviting real candidates
 | 9 | Medium | Dashboard and queue read the latest 300 submissions | Older data drops out of the metrics | Move to incremental aggregates when volume grows | REL-8, HR-1 |
 | 10 | Low | Dashboard filters by status/name only | No role/level/date filter | Add when there is more than one scenario | FR-R-5 |
 | 11 | Low | Demo submission still in the database | Clutter in the metrics | Delete it with the new owner-only Delete button | — |
+| 12 | Medium | Directed Build is a pilot | The assistant is scripted, not a live LLM; instruction quality is a heuristic; overrides are blocked | See `LATER.md` §P4 | §7.3 |
+| 13 | Medium | Follow-up scoring adds ~9 judge calls per code review | About 25–30 calls per submission (spec estimate 12–20) | Leave it on for the demo; decide on §29.1, then batch or drop it | NFR-COST-1 |
+| 14 | Low | New scenarios have no human validation yet | Planted issues may need wording tweaks after pilots | Pilot with 3–5 internal engineers each | SC-2, SC-6 |
 
 ## Remaining
 
@@ -127,13 +199,13 @@ Three of the six problem-statement objectives are now substantially met (up from
 
 | Objective | Status | What's missing |
 | --- | --- | --- |
-| 1. Evaluation pipeline | Built (M1) | M2 and M3 modules; queueing, caching, cascade routing at scale |
+| 1. Evaluation pipeline | Built (M1, M2, M3 pilot) | Live-LLM Directed Build; queueing, caching, cascade routing at scale |
 | 2. Evaluation methodology | Built, unmeasured | Checklists, evidence checks, diversity, anonymization and perturbation tooling exist; real-data results and FB-3–6 bias audits are missing |
-| 3. Knowledge alignment | Not started | RAG with graded examples (KA-1–4); fine-tuned judge (KA-5–7) |
+| 3. Knowledge alignment | Partial | Lexical RAG built behind a flag; embeddings and a fine-tuned judge (KA-5–7) later |
 | 4. Benchmarking and QA | Tooling built | Golden set to be collected; regression gate to be exercised on real runs |
-| 5. Experimental framework | Partial | Versioning and tracing done; shadow mode and experiment log (EX-3, EX-5) missing |
-| 6. Transparency and trust | Partial | Recruiter reports with full audit trail; no candidate report, appeals or technical manual (TR-4–6) |
-| Directing and collaborating with AI | Not started | Decision Review (M2) and Directed Build (M3) |
+| 5. Experimental framework | Mostly built | Versioning, tracing, gate and experiment log done; shadow mode (EX-3) later |
+| 6. Transparency and trust | Built | Full technical manual beyond the summary page; counsel review |
+| Directing and collaborating with AI | Pilot | M2 built; M3 pilot with a scripted assistant |
 
 **By roadmap phase**
 
@@ -142,10 +214,10 @@ Three of the six problem-statement objectives are now substantially met (up from
 | P0 | MVP slice | Done |
 | P1 | Safe to use | Built and tested; needs deploy and owner setup |
 | P2 | Trustworthy | Tooling built; needs 30–50 human-graded reviews and live runs |
-| P3 | Complete M1 | Not started: follow-up scoring, candidate reports, appeals, more scenarios and levels |
-| P4 | New modules | Not started: M2 Decision Review, M3 Directed Build |
-| P5 | Customization | Not started: scenario builder, local norms, outcome tracking, IRT |
-| P6 | Scale and compliance | Not started: multi-tenancy, SSO, ATS, compliance kit |
+| P3 | Complete M1 | Built; variants and rotation (SC-7) later |
+| P4 | New modules | M2 built; M3 pilot (live LLM + sandbox later) |
+| P5 | Customization | Built except LLM scenario generation, job analysis and BYO code (later) |
+| P6 | Scale and compliance | Partial: fairness, methodology, audit and CSV exports, RAG flag built; multi-tenancy, SSO, ATS webhooks and fine-tuning later |
 
 ## Next steps
 
@@ -161,9 +233,10 @@ Three of the six problem-statement objectives are now substantially met (up from
 
 **Build order after that**
 
-1. P2 data: collect 30–50 human-graded reviews (two graders each where possible), run the golden set, set a baseline, then calibrate weights and bands.
-2. P3 depth: follow-up scoring, candidate report and appeals, 2–3 more scenarios with variants and levels.
-3. P4 breadth: Decision Review module first, then Directed Build.
+1. Run without Macaly: the judge provider adapter and the email swap (`LATER.md` §A).
+2. P2 data: collect 30–50 human-graded reviews (two graders each where possible), run the golden set, set a baseline, then calibrate weights and bands.
+3. Pilot the new scenarios with internal engineers; then add variants (SC-7).
+4. Directed Build with a live LLM and sandboxed hidden tests; then multi-tenancy and SSO.
 
 **Open decisions** (spec §29)
 
@@ -186,3 +259,19 @@ Scope agreed with the owner: all P1 blockers, the remaining known gaps, and the 
 - **Recruiter:** invite panel with copy/revoke, search and status filter, nav to the new pages; report gains override/reclassify forms, audit history, resolve, golden-set grading, evaluation buttons, trace summary and owner delete; new `/review` and `/reliability` pages.
 - **Docs and CI:** spec updated to v0.4 to match the code; README and `.env.example` document the new env vars; GitHub Actions runs the typecheck and tests.
 - **Tests:** 64 → 66; production build and layout checks pass.
+
+### 30 Sep 2026 · Checkpoint 3: P3–P6 for the presentation
+
+- **Scope:** website functionality first; heavy infrastructure moved to `LATER.md`, together with the checklist for running without Macaly.
+- **Built:**
+  - PAY-217 (M1 Mid), ADR-031 (M2) and DISC-12 (M3 pilot).
+  - Batteries.
+  - A candidate results page with appeals.
+  - Follow-up and communication scoring.
+  - Interview guide and print to PDF.
+  - Item bank with IRT difficulty, item configuration and emphasis, with an adverse-impact check on each change.
+  - Local norms, outcomes and predictive validity.
+  - Methodology page, audit pack, CSV export, experiment log, and RAG behind a flag.
+- **Tests:** 66 → 79. No tests were removed; browser end-to-end tests are deferred (`LATER.md` §C).
+- **Not possible here:** a local Convex backend (download blocked by the network policy), so the logged-in pages were checked by typecheck, build and component tests only.
+

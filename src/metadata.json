@@ -26,5 +26,17 @@
   "/reliability": {
     "title": "Reliability — ReviewBench",
     "description": "How well the judge council agrees with human graders."
+  },
+  "/results": {
+    "title": "Your results — ReviewBench",
+    "description": "Your assessment results and review requests."
+  },
+  "/items": {
+    "title": "Item bank — ReviewBench",
+    "description": "Planted issues, difficulty and scoring configuration."
+  },
+  "/methodology": {
+    "title": "Methodology — ReviewBench",
+    "description": "How ReviewBench grades, what it measures, and how it is audited."
   }
 }

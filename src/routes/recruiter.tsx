@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { AlertTriangle, Check, Copy, Loader2, X } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Download, Loader2, X } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, RecruiterNav, TopBar, cleanError } from '@/components/rb'
+import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
 import siteMetadata from '@/metadata.json'
 
@@ -54,7 +55,7 @@ function Recruiter() {
       />
       <main className="mx-auto max-w-6xl px-6 py-10">
         <h1 className="text-2xl font-semibold tracking-tight">Candidates</h1>
-        <p className="mt-1 text-sm text-muted-foreground">AI code review assessment · Backend Engineering</p>
+        <p className="mt-1 text-sm text-muted-foreground">Code Review, Decision Review and Directed Build assessments</p>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Stat label="Submitted" value={rows?.length ?? 0} />
@@ -84,6 +85,13 @@ function Recruiter() {
             <option value="review">Needs review</option>
             <option value="error">Error</option>
           </select>
+          <button
+            onClick={() => rows && downloadCsv(rows)}
+            disabled={!rows?.length}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium disabled:opacity-50 sm:ml-auto"
+          >
+            <Download className="size-4" /> Export CSV
+          </button>
         </div>
 
         <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card">
@@ -91,7 +99,7 @@ function Recruiter() {
             <thead>
               <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
                 <th className="px-5 py-3 font-semibold">Candidate</th>
-                <th className="px-5 py-3 font-semibold">Level</th>
+                <th className="px-5 py-3 font-semibold">Module</th>
                 <th className="px-5 py-3 font-semibold">Score</th>
                 <th className="px-5 py-3 font-semibold">Issues found</th>
                 <th className="px-5 py-3 font-semibold">Status</th>
@@ -119,7 +127,10 @@ function Recruiter() {
                         {r.candidateName}
                       </Link>
                     </td>
-                    <td className="px-5 py-4 text-muted-foreground">{r.level}</td>
+                    <td className="px-5 py-4 text-muted-foreground">
+                      {SCENARIOS[r.scenarioId]?.ticketId ?? r.scenarioId} · {r.level}
+                      {r.appealOpen ? <span className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-xs font-semibold text-warning">appeal</span> : null}
+                    </td>
                     <td className="px-5 py-4"><BandChip band={r.band} score={r.overall} /></td>
                     <td className="px-5 py-4 font-mono text-muted-foreground">
                       {r.found !== undefined ? `${r.found} / ${r.total}` : '—'}
@@ -254,7 +265,6 @@ function TeamPanel() {
   )
 }
 
-const SCENARIO_ID = 'ord-482-junior'
 
 /** FR-R-6 / FR-C-12: create a candidate and get their single-use link. */
 function InvitePanel() {
@@ -264,18 +274,21 @@ function InvitePanel() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [extra, setExtra] = useState('0')
+  const [assessment, setAssessment] = useState('scenario:ord-482-junior')
+  const [benchmark, setBenchmark] = useState(false)
+  const [group, setGroup] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
 
-  const linkFor = (token: string) => `${window.location.origin}/assess?t=${token}`
-  const copy = async (token: string) => {
+  const linkFor = (token: string, isGroup = false) => `${window.location.origin}/assess?${isGroup ? 'g' : 't'}=${token}`
+  const copy = async (token: string, isGroup = false) => {
     try {
-      await navigator.clipboard.writeText(linkFor(token))
+      await navigator.clipboard.writeText(linkFor(token, isGroup))
       setCopied(token)
       setTimeout(() => setCopied(null), 2000)
     } catch {
-      window.prompt('Copy this link', linkFor(token))
+      window.prompt('Copy this link', linkFor(token, isGroup))
     }
   }
 
@@ -284,11 +297,21 @@ function InvitePanel() {
     setBusy(true)
     setError('')
     try {
-      const r = await create({ name, email: email.trim() || undefined, scenarioId: SCENARIO_ID, extraMinutes: Number(extra) || 0 })
+      const [kind, id] = assessment.split(':')
+      const r = await create({
+        name,
+        email: email.trim() || undefined,
+        ...(kind === 'battery' ? { batteryId: id } : { scenarioId: id }),
+        extraMinutes: Number(extra) || 0,
+        benchmark,
+        group: group.trim() || undefined,
+      })
       setName('')
       setEmail('')
       setExtra('0')
-      await copy(r.token)
+      setGroup('')
+      if (r.groupToken) await copy(r.groupToken, true)
+      else await copy(r.token)
     } catch (err) {
       setError(cleanError(err))
     } finally {
@@ -296,7 +319,15 @@ function InvitePanel() {
     }
   }
 
-  const open = candidates?.filter((c) => c.status === 'invited' || c.status === 'started') ?? []
+  const openRows = candidates?.filter((c) => c.status === 'invited' || c.status === 'started') ?? []
+  // A battery shows as one row with one link.
+  const seen = new Set<string>()
+  const open = openRows.filter((c) => {
+    if (!c.groupToken) return true
+    if (seen.has(c.groupToken)) return false
+    seen.add(c.groupToken)
+    return true
+  })
   return (
     <section className="mt-8 rounded-xl border border-border bg-card p-6">
       <h2 className="text-sm font-semibold">Invite a candidate</h2>
@@ -304,6 +335,20 @@ function InvitePanel() {
         Each candidate gets a personal, single-use link. The link is copied to your clipboard when you create it.
       </p>
       <form onSubmit={send} className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_140px_auto]">
+        <select value={assessment} onChange={(e) => setAssessment(e.target.value)} aria-label="Assessment" className="rounded-md border border-input bg-background px-3 py-2 text-sm sm:col-span-4">
+          <optgroup label="Single module">
+            {Object.values(SCENARIOS).map((sc) => (
+              <option key={sc.id} value={`scenario:${sc.id}`}>{MODULE_LABEL[sc.kind]} · {sc.ticketId} {sc.title} ({sc.level}, {sc.minutes} min)</option>
+            ))}
+          </optgroup>
+          <optgroup label="Battery (one link, several modules)">
+            {BATTERY_OPTIONS.map((b) => (
+              <option key={b.id} value={`battery:${b.id}`}>
+                {b.name} · {b.scenarioIds.reduce((t, id) => t + (SCENARIOS[id]?.minutes ?? 0), 0)} min
+              </option>
+            ))}
+          </optgroup>
+        </select>
         <input value={name} onChange={(e) => { setName(e.target.value); setError('') }} placeholder="Candidate name" aria-label="Candidate name" required maxLength={120}
           className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30" />
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" aria-label="Candidate email" type="email"
@@ -316,6 +361,20 @@ function InvitePanel() {
         <button type="submit" disabled={busy} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
           Create link
         </button>
+        <details className="text-xs text-muted-foreground sm:col-span-4">
+          <summary className="cursor-pointer font-semibold">More options</summary>
+          <div className="mt-2 flex flex-wrap items-center gap-4">
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={benchmark} onChange={(e) => setBenchmark(e.target.checked)} />
+              Internal engineer (sets local norms, excluded from hiring stats)
+            </label>
+            <label className="inline-flex items-center gap-2">
+              Self-identified group (optional, with consent)
+              <input value={group} onChange={(e) => setGroup(e.target.value)} maxLength={60} aria-label="Self-identified group"
+                className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground" />
+            </label>
+          </div>
+        </details>
       </form>
       {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
       {open.length > 0 ? (
@@ -325,16 +384,27 @@ function InvitePanel() {
               <span className="min-w-0 truncate">
                 <span className="font-medium">{c.name}</span>
                 {c.email ? <span className="text-muted-foreground"> · {c.email}</span> : null}
+                <span className="text-muted-foreground">
+                  {' · '}
+                  {c.batteryId ? BATTERY_OPTIONS.find((b) => b.id === c.batteryId)?.name ?? 'Battery' : SCENARIOS[c.scenarioId]?.ticketId ?? c.scenarioId}
+                </span>
                 {c.extraMinutes ? <span className="text-muted-foreground"> · +{c.extraMinutes} min</span> : null}
+                {c.benchmark ? <span className="text-muted-foreground"> · internal</span> : null}
               </span>
               <span className="flex items-center gap-3">
                 <span className="rounded-full border border-border px-2.5 py-0.5 text-xs font-semibold capitalize text-muted-foreground">
                   {c.status === 'started' ? 'In progress' : 'Not started'}
                 </span>
-                <button onClick={() => copy(c.token)} className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
-                  {copied === c.token ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} {copied === c.token ? 'Copied' : 'Copy link'}
+                <button onClick={() => copy(c.groupToken ?? c.token, !!c.groupToken)} className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
+                  {copied === (c.groupToken ?? c.token) ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} {copied === (c.groupToken ?? c.token) ? 'Copied' : 'Copy link'}
                 </button>
-                <button onClick={() => revoke({ id: c._id }).catch((err) => setError(cleanError(err)))} aria-label={`Revoke link for ${c.name}`}
+                <button
+                  onClick={() =>
+                    Promise.all(
+                      (c.groupToken ? openRows.filter((x) => x.groupToken === c.groupToken) : [c]).map((x) => revoke({ id: x._id })),
+                    ).catch((err) => setError(cleanError(err)))
+                  }
+                  aria-label={`Revoke link for ${c.name}`}
                   className="text-muted-foreground hover:text-destructive">
                   <X className="size-4" />
                 </button>
@@ -345,6 +415,22 @@ function InvitePanel() {
       ) : null}
     </section>
   )
+}
+
+/** ATS-friendly export of the dashboard rows (webhook integrations: later). */
+function downloadCsv(rows: Array<Record<string, unknown>>) {
+  const cols = ['candidateName', 'scenarioId', 'level', 'status', 'overall', 'band', 'found', 'total', 'needsReview', 'reviewResolved', 'autoSubmitted', 'submittedAt']
+  const esc = (v: unknown) => {
+    const s = v === undefined || v === null ? '' : String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lines = [cols.join(','), ...rows.map((r) => cols.map((c) => esc(c === 'submittedAt' ? new Date(r[c] as number).toISOString() : r[c])).join(','))]
+  const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `reviewbench-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: 'danger' }) {

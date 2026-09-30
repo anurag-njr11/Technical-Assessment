@@ -17,15 +17,20 @@ function Home() {
     <div className="min-h-screen bg-background">
       <TopBar
         right={
-          <Link to="/recruiter" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-            Recruiter dashboard
-          </Link>
+          <>
+            <Link to="/methodology" className="text-sm font-medium text-muted-foreground hover:text-foreground">
+              Methodology
+            </Link>
+            <Link to="/recruiter" className="text-sm font-medium text-muted-foreground hover:text-foreground">
+              Recruiter dashboard
+            </Link>
+          </>
         }
       />
 
       <main className="mx-auto max-w-5xl px-6 pb-24 pt-16">
         <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          MVP · Code review module
+          Code Review · Decision Review · Directed Build
         </p>
         <h1 className="mt-4 max-w-3xl text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
           See how engineers review code an AI wrote.
@@ -45,8 +50,8 @@ function Home() {
               <div className="text-sm font-semibold">For candidates</div>
               <div className="mt-2 text-2xl font-semibold tracking-tight">Take the assessment</div>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Junior backend scenario · Python / Flask · about 40 minutes. Open the personal link from your
-                invitation email to begin.
+                Review AI-written code, critique an AI's architecture decision, or build with an AI assistant. 20–40
+                minutes per part. Open the personal link from your invitation email to begin.
               </p>
             </div>
             <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold">

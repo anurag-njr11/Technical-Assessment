@@ -6,7 +6,7 @@
 
 import { callMacalyJson } from "./macaly"
 
-export const PROMPT_VERSION = "prompts-2026-09-30"
+export const PROMPT_VERSION = "prompts-2026-09-30b"
 export const RUBRIC_VERSION = "rubric-m1-2026-09-30"
 
 export type ModelRef = { model: string; family: string }

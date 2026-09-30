@@ -29,8 +29,15 @@ the candidate's own words.
 | `src/routes/assess.tsx` | Candidate flow (`/assess?t=<token>`) |
 | `src/routes/recruiter.tsx` | Dashboard: invite links, filters, team |
 | `src/routes/report.tsx` | Evidence-backed report + override, golden-set and evaluation tools |
-| `src/routes/review.tsx` | Human review queue |
-| `src/routes/reliability.tsx` | Reliability dashboard and regression gate |
+| `src/routes/review.tsx` | Human review queue (escalations + candidate appeals) |
+| `src/routes/reliability.tsx` | Reliability, fairness, validity, experiment log, audit pack |
+| `src/routes/items.tsx` | Item bank: detection rates, IRT difficulty, item/emphasis config |
+| `src/routes/results.tsx` | Candidate-facing results + appeal (`/results?t=<token>`) |
+| `src/routes/methodology.tsx` | Public methodology / technical manual summary |
+| `src/components/build-workspace.tsx` | M3 Directed Build editor + assistant + visible tests |
+| `convex/builds.ts`, `convex/buildScenario.ts` | M3 assistant proxy (server-side), planted faults, grading |
+| `convex/items.ts`, `convex/insights.ts` | Item config + adverse-impact check; norms, IRT, outcomes, validity |
+| `LATER.md` | Deferred enhancements, incl. running without Macaly |
 
 ## Run locally
 ```bash
@@ -38,7 +45,7 @@ npm install
 cp .env.example .env.local   # fill in your Convex deployment values
 npx convex dev               # in one terminal
 npm run dev                  # in another, then open http://localhost:3000
-npm test                     # 66 tests
+npm test                     # 79 tests
 ```
 
 ## Platform dependencies (read before self-hosting)
@@ -60,8 +67,9 @@ Optional Convex environment variables:
 | `SUBMISSIONS_PER_HOUR` | 60 | Global cap on graded submissions (bounds judge spend) |
 | `STARTS_PER_HOUR` | 300 | Global cap on assessment starts |
 | `JUDGE_PANEL_JSON` | built-in panel | Replace judge models; all 6 families must be distinct |
+| `RAG_EXAMPLES` | off | `on` adds up to 2 similar human-graded examples to each issue prompt |
 
 ## Status
-Code Review module with Phase P1 (safe to use) and the Phase P2 reliability
-tooling. See `ReviewBench — Progress Report.md` for what is done, what still
+Three modules (Code Review, Decision Review, Directed Build pilot) with
+P1–P6 website functionality at demo depth. See `ReviewBench — Progress Report.md` for what is done, what still
 needs real data or owner action, and the roadmap.
