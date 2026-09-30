@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
 import { SCENARIO } from "@/lib/scenario"
-import { ANSWER_KEYS } from "@/convex/answerKey"
+import { ANSWER_KEYS, SCENARIO_META } from "@/convex/answerKey"
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -57,3 +57,18 @@ describe("scenario content matches its answer key", () => {
     expect(SCENARIO.criteria.join(" ")).toMatch(/capped at 100/)
   })
 })
+
+describe("server scenario metadata matches the candidate-visible scenario (SC-9)", () => {
+  it("level, time limit and follow-up questions agree", () => {
+    const meta = SCENARIO_META[SCENARIO.id]
+    expect(meta).toBeDefined()
+    expect(meta.level).toBe(SCENARIO.level)
+    expect(meta.minutes).toBe(SCENARIO.minutes)
+    expect(meta.followUps).toEqual(SCENARIO.followUps)
+  })
+
+  it("every answer key has matching scenario metadata", () => {
+    for (const id of Object.keys(ANSWER_KEYS)) expect(SCENARIO_META[id], id).toBeDefined()
+  })
+})
+

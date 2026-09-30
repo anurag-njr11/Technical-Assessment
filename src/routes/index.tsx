@@ -38,17 +38,19 @@ function Home() {
         <div className="mt-10 grid gap-4 md:grid-cols-2">
           <Link
             to="/assess"
+            search={{ t: '' }}
             className="group flex flex-col justify-between rounded-xl border border-border bg-card p-6 transition-colors hover:border-foreground/30"
           >
             <div>
               <div className="text-sm font-semibold">For candidates</div>
               <div className="mt-2 text-2xl font-semibold tracking-tight">Take the assessment</div>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Junior backend scenario · Python / Flask · about 40 minutes.
+                Junior backend scenario · Python / Flask · about 40 minutes. Open the personal link from your
+                invitation email to begin.
               </p>
             </div>
             <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold">
-              Start <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              How it works <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </span>
           </Link>
           <Link

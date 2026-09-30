@@ -188,11 +188,13 @@ export const dashboard = query({
   args: {},
   handler: async (ctx) => {
     await requireRecruiter(ctx)
-    const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(1000)
+    // Bounded to stay well inside Convex per-query read limits (~20 KB per result).
+    // Beyond a few hundred graded submissions, move these metrics to incremental aggregates.
+    const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)
     const subs = rows
       .filter((r) => r.status === "graded" && (r.machineResult ?? r.result))
       .map((r) => ({ _id: r._id as string, scenarioId: r.scenarioId, submittedAt: r.submittedAt, machine: (r.machineResult ?? r.result)! }))
-    const labels = (await ctx.db.query("goldenLabels").take(20000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
+    const labels = (await ctx.db.query("goldenLabels").take(8000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
     const runs = await ctx.db.query("evalRuns").order("desc").take(200)
     const data = buildDashboard(subs, labels as any, runs)
     const recent = runs.slice(0, 20).map((r) => ({

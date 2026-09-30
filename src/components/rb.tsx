@@ -80,3 +80,31 @@ export function BandChip({ band, score }: { band?: string; score?: number }) {
     </span>
   )
 }
+
+const NAV = [
+  { to: '/recruiter', label: 'Candidates' },
+  { to: '/review', label: 'Review queue' },
+  { to: '/reliability', label: 'Reliability' },
+] as const
+
+/** Top-level navigation for recruiter pages. */
+export function RecruiterNav() {
+  return (
+    <nav className="hidden items-center gap-1 md:flex" aria-label="Recruiter">
+      {NAV.map((n) => (
+        <Link
+          key={n.to}
+          to={n.to}
+          className="rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+          activeProps={{ className: 'bg-accent text-foreground' }}
+        >
+          {n.label}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
+export function cleanError(err: unknown, fallback = 'Something went wrong.') {
+  return err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : fallback
+}

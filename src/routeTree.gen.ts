@@ -9,14 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ReportRouteImport } from './routes/report'
+import { Route as ReliabilityRouteImport } from './routes/reliability'
 import { Route as RecruiterRouteImport } from './routes/recruiter'
 import { Route as AssessRouteImport } from './routes/assess'
 import { Route as IndexRouteImport } from './routes/index'
 
+const ReviewRoute = ReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportRoute = ReportRouteImport.update({
   id: '/report',
   path: '/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReliabilityRoute = ReliabilityRouteImport.update({
+  id: '/reliability',
+  path: '/reliability',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecruiterRoute = RecruiterRouteImport.update({
@@ -39,43 +51,73 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
   '/recruiter': typeof RecruiterRoute
+  '/reliability': typeof ReliabilityRoute
   '/report': typeof ReportRoute
+  '/review': typeof ReviewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
   '/recruiter': typeof RecruiterRoute
+  '/reliability': typeof ReliabilityRoute
   '/report': typeof ReportRoute
+  '/review': typeof ReviewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
   '/recruiter': typeof RecruiterRoute
+  '/reliability': typeof ReliabilityRoute
   '/report': typeof ReportRoute
+  '/review': typeof ReviewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/assess' | '/recruiter' | '/report'
+  fullPaths:
+    '/' | '/assess' | '/recruiter' | '/reliability' | '/report' | '/review'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/assess' | '/recruiter' | '/report'
-  id: '__root__' | '/' | '/assess' | '/recruiter' | '/report'
+  to: '/' | '/assess' | '/recruiter' | '/reliability' | '/report' | '/review'
+  id:
+    | '__root__'
+    | '/'
+    | '/assess'
+    | '/recruiter'
+    | '/reliability'
+    | '/report'
+    | '/review'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AssessRoute: typeof AssessRoute
   RecruiterRoute: typeof RecruiterRoute
+  ReliabilityRoute: typeof ReliabilityRoute
   ReportRoute: typeof ReportRoute
+  ReviewRoute: typeof ReviewRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/review': {
+      id: '/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof ReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/report': {
       id: '/report'
       path: '/report'
       fullPath: '/report'
       preLoaderRoute: typeof ReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reliability': {
+      id: '/reliability'
+      path: '/reliability'
+      fullPath: '/reliability'
+      preLoaderRoute: typeof ReliabilityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recruiter': {
@@ -106,7 +148,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AssessRoute: AssessRoute,
   RecruiterRoute: RecruiterRoute,
+  ReliabilityRoute: ReliabilityRoute,
   ReportRoute: ReportRoute,
+  ReviewRoute: ReviewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

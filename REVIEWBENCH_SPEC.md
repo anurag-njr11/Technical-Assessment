@@ -1,6 +1,6 @@
 # ReviewBench — Product & Technical Specification
 
-> **Status:** Living spec · v0.3 · 30 Sep 2026
+> **Status:** Living spec · v0.4 · 30 Sep 2026 (P1 and P2 tooling implemented; see Progress Report)
 > **Purpose:** Single source of truth for spec-driven development. Every feature, rule, and threshold the system implements should trace back to a requirement ID in this document (`FR-`, `NFR-`, `GR-`, `AC-`, etc.). When the code and this spec disagree, one of them is a bug — fix whichever is wrong and update the other.
 > **Companion document:** *ReviewBench — Progress Report* (what is built vs. remaining, keyed to the IDs below).
 
@@ -320,7 +320,7 @@ Expected verdict: **request changes**. Total detection weight: 12.
 |---|---|
 | FR-C-1 | Candidates take assessments **without creating an account**. |
 | FR-C-2 | Intro screen shows ticket, acceptance criteria, estimated time, and a disclosure that the code is AI-written and may contain mistakes. |
-| FR-C-3 | Candidate enters their name (1–120 chars) before starting. *(Replaced by per-candidate invite tokens in FR-C-12.)* |
+| FR-C-3 | *(Superseded by FR-C-12.)* The candidate's name comes from the recruiter-created invite. |
 | FR-C-4 | Review screen shows a file list, diff viewer with line numbers and add/context markers, and unchanged files needed for verification. |
 | FR-C-5 | Long lines **wrap**; no planted issue may be hidden behind horizontal scrolling. |
 | FR-C-6 | Candidate can add a comment on any line with text (≤ 4,000 chars) and severity (critical/high/medium/low); can delete their comments. |
@@ -329,11 +329,11 @@ Expected verdict: **request changes**. Total detection weight: 12.
 | FR-C-9 | Follow-up: 3 written questions, all required. |
 | FR-C-10 | A visible countdown timer shows remaining time; turns red under 5 minutes. |
 | FR-C-11 | Confirmation screen explains what happens next (automated grading, possible human check, recruiter notification). |
-| FR-C-12 | *(Planned)* Each candidate receives a **single-use invite link** tied to a recruiter-created candidate record. |
-| FR-C-13 | *(Planned)* Work **autosaves**; refresh or disconnect does not lose comments. |
-| FR-C-14 | *(Planned)* Timer is **enforced** server-side; submission auto-closes at time limit plus grace period. |
-| FR-C-15 | *(Planned)* Interactive controls are disabled until the page is hydrated/ready. |
-| FR-C-16 | *(Planned)* Accessibility accommodations (extended time) configurable per candidate. |
+| FR-C-12 | Each candidate receives a **single-use invite link** tied to a recruiter-created candidate record. |
+| FR-C-13 | Work **autosaves** server-side; refresh or disconnect does not lose comments. |
+| FR-C-14 | Timer is **enforced** server-side; the saved draft auto-submits at the time limit plus a 2-minute grace period (verdict recorded as `none` if never chosen). |
+| FR-C-15 | Interactive controls are disabled until the page is hydrated/ready. |
+| FR-C-16 | Accessibility accommodations (extended time, 0–120 min) configurable per candidate. |
 | FR-C-17 | *(Planned)* Candidate-facing results summary and appeal request (see §17). |
 | FR-C-18 | Server limits: ≤ 40 comments, ≤ 10 follow-up answers, text ≤ 4,000 chars. |
 
@@ -370,7 +370,7 @@ Submission
 | GR-4 | Judges never produce scores; they answer yes/no checklist questions plus an evidence quote. |
 | GR-5 | Candidate text is wrapped in `<candidate_comment>` delimiters; the system prompt declares it untrusted and instructs judges to ignore embedded instructions. |
 | GR-6 | Judges respond with a single JSON object; unparseable responses are recorded as invalid votes. |
-| GR-7 | If a judge's primary model fails, it falls back to a backup model **from a family not already on the panel** *(current fallbacks do not yet satisfy this — see Progress Report)*. |
+| GR-7 | If a judge's primary model fails, it falls back to a backup model **from a family not already on the panel**. All six models must come from distinct families; this is validated at load time (`validatePanel`). |
 
 **Issue checklist (per issue pair):**
 
@@ -415,7 +415,7 @@ Submission
 | GR-12 | Comments with no positive nearby match are classified by the council. |
 | GR-13 | If the council majority says a comment matches a known issue elsewhere, that pair is re-judged with the issue checklist. |
 | GR-14 | Final classes: `valid_extra` (rewarded in precision; queued for answer-key review), `nitpick` (neutral), `false_alarm` (penalized), `undetermined` (escalated). |
-| GR-15 | *(Planned)* When classification says "matched" but the issue checklist says "not identified," label as **`vague_match`** with a specific escalation reason instead of `undetermined`. |
+| GR-15 | When classification says "matched" but the issue checklist says "not identified," label as **`vague_match`** with a specific escalation reason instead of `undetermined`. |
 
 ### 10.6 Stage 5 — Consensus and escalation
 
@@ -547,8 +547,8 @@ Edge cases: no comments → precision 0; comments but none valid or false → pr
 | FR-R-2 | Summary stats: submitted, graded, flagged for human review. |
 | FR-R-3 | Status indicators: grading (live), graded, error, needs review. |
 | FR-R-4 | Real-time updates as grading completes. |
-| FR-R-5 | *(Planned)* Filters by role, level, status, date; search by candidate. |
-| FR-R-6 | *(Planned)* Create candidates and send invite links (pairs with FR-C-12). |
+| FR-R-5 | Filter by status and search by candidate *(role/level/date filters pending: one scenario today)*. |
+| FR-R-6 | Create candidates and copy invite links (pairs with FR-C-12). Email delivery is manual for now. |
 
 ### 15.2 Candidate report (`/report?id=`)
 
@@ -573,7 +573,7 @@ Edge cases: no comments → precision 0; comments but none valid or false → pr
 | FR-R-18 | Owner sees members and pending invites; can invite by email, revoke invites, remove members. |
 | FR-R-19 | Non-owners see the member list only. |
 
-### 15.4 Human review queue *(planned)*
+### 15.4 Human review queue
 
 | ID | Requirement |
 |---|---|
@@ -632,7 +632,7 @@ Edge cases: no comments → precision 0; comments but none valid or false → pr
 | SEC-12 | The public submit endpoint returns nothing (no IDs usable to look up results). |
 | SEC-13 | Candidate content is treated as untrusted in all prompts. |
 | SEC-14 | Secrets (deploy keys, API tokens) never committed to source repositories. |
-| SEC-15 | *(Planned)* Rate limiting and per-invite submission caps on the public endpoint. |
+| SEC-15 | Rate limiting (global hourly caps on starts and submissions, per-candidate draft-save cap) and single-use invites on the public endpoints. |
 | SEC-16 | *(Planned)* Candidate data never sent to model providers that train on inputs. |
 | SEC-17 | *(Planned)* Data retention policy and candidate data deletion on request. |
 
@@ -803,7 +803,7 @@ type Result = {
 }
 ```
 
-> *(Planned)* Replace the untyped `result` field with a validated schema (NFR-DATA-1).
+> The `result` and `machineResult` fields are validated by `resultValidator` (NFR-DATA-1). `machineResult` is the untouched council output; `result` has human overrides applied.
 
 ### 22.5 Planned tables
 
@@ -842,9 +842,9 @@ type Result = {
 | NFR-REL-1 | Judge failure | Automatic fallback; low quorum escalates rather than fails |
 | NFR-REL-2 | Grading failure | Status set to `error`; recruiter can retry |
 | NFR-SEC-1 | Server-side authorization for all protected data (SEC-10) |
-| NFR-DATA-1 | Schema validation for stored results *(pending)* |
+| NFR-DATA-1 | Schema validation for stored results |
 | NFR-COST-1 | Track LLM calls and cost per submission; MVP ≈ 12–20 calls per submission |
-| NFR-OBS-1 | Log and trace every judge call *(pending)* |
+| NFR-OBS-1 | Log and trace every judge call (`judgeCalls` table) |
 
 ---
 
@@ -854,11 +854,11 @@ type Result = {
 
 | Judge | Primary model | Fallback (current) |
 |---|---|---|
-| A | `google/gemini-3.6-flash` | preset DOCS (Gemini family) |
-| B | `anthropic/claude-sonnet-5` | preset CODE |
-| C | `meta-llama/llama-3.3-70b-instruct` | preset FAST (Gemini family) ⚠️ |
+| A | `google/gemini-3.6-flash` | `qwen/qwen3-235b-a22b-instruct` (Alibaba) |
+| B | `anthropic/claude-sonnet-5` | `mistralai/mistral-large` (Mistral) |
+| C | `meta-llama/llama-3.3-70b-instruct` | `deepseek/deepseek-chat` (DeepSeek) |
 
-⚠️ Fallbacks can collapse panel diversity (violates GR-7). Fix: each fallback must come from a family not otherwise present.
+All six families are distinct (GR-7). The panel can be replaced without a code change through the `JUDGE_PANEL_JSON` environment variable, which is validated the same way. Fallback model IDs must be confirmed against the LLM endpoint's catalogue; an unavailable fallback simply counts as an unavailable judge and low quorum escalates.
 
 ### 25.2 Free-tier and open-weight options (development/prototype)
 
@@ -885,8 +885,8 @@ Cache by (submission hash, rubric version, model); batch checklist items per cal
 | Backend unit/integration | Vitest + convex-test (edge runtime) | Access control, validation, full grading pipeline with a deterministic fake judge panel |
 | Scenario integrity | Vitest (jsdom) | Answer-key isolation, solvability, visible line ranges, decoy justification |
 | Browser QA | Headless browser against preview | Candidate flow end to end without submitting; layout checks |
-| Real-model evaluation *(pending)* | Golden set + harness | Accuracy, stability, perturbation, injection resistance |
-| Regression gate *(pending)* | CI | Block changes that degrade REL metrics |
+| Real-model evaluation | Golden set + live runs (retest, perturbation, adversarial) from the Reliability page | Accuracy, stability, perturbation, injection resistance |
+| Regression gate | Golden-set run vs. baseline run on the Reliability page; unit tests + typecheck in GitHub Actions | Block changes that degrade REL metrics |
 
 ### 26.1 Required test cases (current)
 
