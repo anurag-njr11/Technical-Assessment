@@ -4,6 +4,8 @@
 // on the panel, so a failover can never collapse diversity. validatePanel()
 // enforces this at load time and in tests.
 
+import { callMacalyJson } from "./macaly"
+
 export const PROMPT_VERSION = "prompts-2026-09-30b"
 export const RUBRIC_VERSION = "rubric-m1-2026-09-30"
 
@@ -92,6 +94,23 @@ export async function callModel(
   /** Filled with the provider's reported token usage, when given. */
   usage?: { input: number; output: number },
 ): Promise<string> {
+  // On Macaly (MACALY_API_TOKEN set) calls are billed to Macaly credits.
+  if (process.env.MACALY_API_TOKEN) {
+    const res = await callMacalyJson("/api/client-app/llm-usage", {
+      model: ref.model,
+      temperature: 0,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: prompt },
+      ],
+    })
+    const text = String(res.text ?? "")
+    if (usage) {
+      usage.input = Math.ceil((system.length + prompt.length) / 4)
+      usage.output = Math.ceil(text.length / 4)
+    }
+    return text
+  }
   const baseUrl = (process.env.LLM_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "")
   const key = process.env.LLM_API_KEY
   const response = await fetch(`${baseUrl}/chat/completions`, {

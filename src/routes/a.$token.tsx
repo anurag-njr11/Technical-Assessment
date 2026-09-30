@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { ArrowRight, Bot, Clock, Loader2, Lock } from 'lucide-react'
+import { ArrowRight, Bot, Clock, Loader2, Lock, ShieldCheck } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { TopBar } from '@/components/rb'
+import { Page, PageSpinner, btn } from '@/components/rb'
 
 // Landing page for a recruiter's shareable assessment link / QR code.
 export const Route = createFileRoute('/a/$token')({
@@ -49,16 +49,12 @@ function Join() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar subtitle="Assessment" />
-      <main className="mx-auto max-w-lg px-4 py-10 sm:px-6 sm:py-16">
+    <Page subtitle="Assessment" width="form" className="max-w-lg sm:py-16">
         {info === undefined ? (
-          <div className="grid place-items-center py-24" role="status" aria-label="Loading">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          </div>
+          <PageSpinner />
         ) : info === null || !info.open ? (
-          <div className="rounded-xl border border-border bg-card p-8 text-center">
-            <div className="mx-auto grid size-12 place-items-center rounded-full border border-foreground"><Lock className="size-5" /></div>
+          <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)]">
+            <div className="mx-auto grid size-12 place-items-center rounded-full bg-muted text-muted-foreground"><Lock className="size-5" /></div>
             <h1 className="mt-4 text-xl font-semibold">{info === null ? "This link isn't valid" : 'This assessment is closed'}</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               {info === null
@@ -67,18 +63,21 @@ function Join() {
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-border bg-card p-6 sm:p-8">
-            <p className="text-sm text-muted-foreground">{info.role} · {info.level}</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">{info.title}</h1>
-            <ul className="mt-5 space-y-3 text-sm">
-              <li className="flex gap-3"><Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />{info.minutes} minutes. The timer starts when you begin.</li>
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)]">
+            <div className="h-1 bg-gradient-to-r from-primary to-primary/40" />
+            <div className="p-6 sm:p-8">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{info.role} · {info.level}</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">{info.title}</h1>
+            <ul className="mt-5 space-y-2.5 text-sm">
+              <li className="flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2.5"><Clock className="size-4 shrink-0 text-primary" />{info.minutes} minutes. The timer starts when you begin.</li>
               {info.aiAssisted ? (
-                <li className="flex gap-3"><Bot className="mt-0.5 size-4 shrink-0 text-muted-foreground" />You'll work with an AI coding assistant.</li>
+                <li className="flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2.5"><Bot className="size-4 shrink-0 text-primary" />You'll work with an AI coding assistant.</li>
               ) : null}
+              <li className="flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2.5"><ShieldCheck className="size-4 shrink-0 text-primary" />Your progress saves automatically.</li>
             </ul>
             <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
               Work on your own, the way you normally would. Use the tools provided, check your work before you submit, and
-              don't share the task. Your progress saves automatically.
+              don't share the task.
             </p>
             <form onSubmit={start} className="mt-6 space-y-3">
               <label className="block text-sm font-medium">
@@ -89,7 +88,7 @@ function Join() {
                   autoComplete="name"
                   maxLength={100}
                   required
-                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2.5 text-base outline-none focus:ring-2 focus:ring-ring/30 sm:text-sm"
+                  className="mt-1.5 w-full rounded-lg border border-input bg-card px-3 py-2.5 text-base outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/15 sm:text-sm"
                 />
               </label>
               <label className="block text-sm font-medium">
@@ -100,21 +99,21 @@ function Join() {
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                   maxLength={200}
-                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2.5 text-base outline-none focus:ring-2 focus:ring-ring/30 sm:text-sm"
+                  className="mt-1.5 w-full rounded-lg border border-input bg-card px-3 py-2.5 text-base outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/15 sm:text-sm"
                 />
               </label>
               {error ? <p className="text-[13px] text-destructive" role="alert">{error}</p> : null}
               <button
                 type="submit"
                 disabled={busy}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                className={`${btn.primary} w-full py-3`}
               >
                 {busy ? <Loader2 className="size-4 animate-spin" /> : null} Start <ArrowRight className="size-4" />
               </button>
             </form>
+            </div>
           </div>
         )}
-      </main>
-    </div>
+    </Page>
   )
 }

@@ -4,8 +4,8 @@ import { useMutation, useQuery } from 'convex/react'
 import { AlertTriangle, ArrowLeft, Loader2, ShieldCheck } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { BandChip, RecruiterNav, TopBar, cleanError } from '@/components/rb'
-import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
+import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
 import { AssessmentLink } from '@/components/assessment-link'
 import { MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import { cn } from '@/lib/utils'
@@ -73,29 +73,12 @@ function Assessment() {
   const [picked, setPicked] = useState<string[]>([])
   const [comparing, setComparing] = useState(false)
 
-  const right = (
-    <>
-      <RecruiterNav />
-      <Link to="/recruiter" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Assessments
-      </Link>
-      <SignOutButton />
-    </>
-  )
-  if (!mounted || (id && a === undefined)) {
-    return (
-      <div className="min-h-screen bg-background">
-        <TopBar right={right} />
-        <div className="grid place-items-center py-24"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
-      </div>
-    )
-  }
+  if (!mounted || (id && a === undefined)) return <RecruiterPage loading />
   if (!id || !a) {
     return (
-      <div className="min-h-screen bg-background">
-        <TopBar right={right} />
+      <RecruiterPage>
         <p className="py-24 text-center text-muted-foreground">Assessment not found.</p>
-      </div>
+      </RecruiterPage>
     )
   }
   const sc = SCENARIOS[a.scenarioId]
@@ -112,47 +95,48 @@ function Assessment() {
   const compared = rows.filter((r) => picked.includes(r._id))
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar subtitle="Assessment" right={right} />
-      <main className="mx-auto max-w-7xl px-6 py-10">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{a.title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {a.role} · {sc ? `${MODULE_LABEL[sc.kind]} · ${sc.ticketId}` : a.scenarioId} · {a.level} · {a.minutes} min
-              {a.aiAssisted ? ' · AI-assisted' : ''}
-            </p>
-          </div>
-          <button
-            onClick={() => setStatus({ id: a._id, status: a.status === 'active' ? 'closed' : 'active' }).catch((err) => setError(cleanError(err)))}
-            className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium"
-          >
-            {a.status === 'active' ? 'Close assessment' : 'Reopen assessment'}
-          </button>
-        </div>
+    <RecruiterPage>
+        <Link to="/recruiter" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="size-4" /> All assessments
+        </Link>
+        <PageHeader
+          className="mt-4"
+          title={a.title}
+          description={<>
+            {a.role} · {sc ? `${MODULE_LABEL[sc.kind]} · ${sc.ticketId}` : a.scenarioId} · {a.level} · {a.minutes} min
+            {a.aiAssisted ? ' · AI-assisted' : ''}
+          </>}
+          actions={
+            <button
+              onClick={() => setStatus({ id: a._id, status: a.status === 'active' ? 'closed' : 'active' }).catch((err) => setError(cleanError(err)))}
+              className={btn.secondary}
+            >
+              {a.status === 'active' ? 'Close assessment' : 'Reopen assessment'}
+            </button>
+          }
+        />
         {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
 
-        <section className="mt-6 rounded-xl border border-border bg-card p-6">
-          {a.status === 'active' ? <AssessmentLink token={a.token} /> : <p className="text-sm text-muted-foreground">Closed: the link no longer accepts new candidates.</p>}
-        </section>
+        <Panel className="mt-8" title="Share link" description={a.status === 'active' ? undefined : 'Closed: the link no longer accepts new candidates.'}>
+          {a.status === 'active' ? <AssessmentLink token={a.token} /> : null}
+        </Panel>
 
-        <div className="mt-8 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">Candidates ({rows.length})</h2>
-          <button
-            onClick={() => setComparing(true)}
-            disabled={picked.length < 2}
-            className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            Compare {picked.length ? `(${picked.length})` : ''}
-          </button>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">Tick 2–4 candidates to compare them side by side. Click a column to sort.</p>
-
-        <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card">
+        <Panel
+          flush
+          className="mt-5"
+          title={`Candidates (${rows.length})`}
+          description="Tick 2–4 candidates to compare them side by side. Click a column to sort."
+          actions={
+            <button onClick={() => setComparing(true)} disabled={picked.length < 2} className={btn.primary}>
+              Compare {picked.length ? `(${picked.length})` : ''}
+            </button>
+          }
+        >
+        <div className="mt-4 overflow-x-auto border-t border-border">
           <table className="w-full min-w-[1100px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                <th className="w-8 px-3 py-3" />
+                <th className="w-8 py-3 pl-6 pr-3" />
                 <th className="px-3 py-3 font-semibold">Candidate</th>
                 {METRICS.map((m) => (
                   <th key={m.key} className="px-3 py-3 font-semibold">
@@ -169,8 +153,8 @@ function Assessment() {
                 <tr><td colSpan={METRICS.length + 3} className="px-5 py-12 text-center text-muted-foreground">No candidates yet. Share the link or QR code above.</td></tr>
               ) : (
                 rows.map((c) => (
-                  <tr key={c._id} className="border-b border-border last:border-0 hover:bg-accent/50">
-                    <td className="px-3 py-3">
+                  <tr key={c._id} className={cn('border-b border-border transition-colors last:border-0 hover:bg-muted/50', picked.includes(c._id) && 'bg-accent/60')}>
+                    <td className="py-3 pl-6 pr-3">
                       <input type="checkbox" aria-label={`Compare ${c.name}`} checked={picked.includes(c._id)} onChange={() => toggle(c._id)}
                         disabled={!picked.includes(c._id) && picked.length >= 4} />
                     </td>
@@ -190,16 +174,16 @@ function Assessment() {
             </tbody>
           </table>
         </div>
+        </Panel>
 
         {comparing && compared.length >= 2 ? <Compare rows={compared} onClose={() => setComparing(false)} /> : null}
-      </main>
-    </div>
+    </RecruiterPage>
   )
 }
 
 function CandidateName({ c }: { c: Row }) {
   return c.submissionId ? (
-    <Link to="/report" search={{ id: c.submissionId }} className="font-semibold hover:underline">{c.name}</Link>
+    <Link to="/report" search={{ id: c.submissionId }} className="font-semibold hover:text-primary hover:underline">{c.name}</Link>
   ) : (
     <span className="font-semibold">{c.name}</span>
   )
@@ -224,12 +208,13 @@ function Outcome({ c }: { c: Row }) {
 /** Side-by-side comparison of 2–4 candidates across the same metrics. */
 function Compare({ rows, onClose }: { rows: Row[]; onClose: () => void }) {
   return (
-    <section className="mt-8 rounded-xl border border-border bg-card p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Comparison</h2>
-        <button onClick={onClose} className="text-xs font-semibold text-muted-foreground hover:text-foreground">Close</button>
-      </div>
-      <table className="mt-4 w-full border-collapse text-sm">
+    <Panel
+      className="rb-rise mt-5"
+      title="Comparison"
+      actions={<button onClick={onClose} className={btn.secondary}>Close</button>}
+    >
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[560px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-border text-left">
             <th className="py-2 pr-4 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Metric</th>
@@ -266,6 +251,7 @@ function Compare({ rows, onClose }: { rows: Row[]; onClose: () => void }) {
           </tr>
         </tbody>
       </table>
-    </section>
+      </div>
+    </Panel>
   )
 }

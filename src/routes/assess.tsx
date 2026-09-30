@@ -76,19 +76,22 @@ function GroupLanding({ groupToken }: { groupToken: string }) {
   const total = group.modules.reduce((s, m) => s + m.minutes, 0)
   return (
     <Shell>
-      <main className="mx-auto max-w-2xl px-6 py-12">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Assessment battery</p>
+      <main className="rb-rise mx-auto max-w-2xl px-4 py-12 sm:px-6">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Assessment battery</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{group.battery}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Hi {group.name}. This assessment has {group.modules.length} parts, about {total} minutes in total. Each part has its
           own timer that starts when you begin it, so you can take a break between parts.
         </p>
-        <ol className="mt-6 space-y-3">
+        <ol className="rb-stagger mt-6 space-y-3">
           {group.modules.map((m, i) => (
             <li key={m.scenarioId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-5">
-              <div>
+              <div className="flex items-center gap-4">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent font-mono text-sm font-semibold text-accent-foreground">{i + 1}</span>
+                <div>
                 <div className="text-xs text-muted-foreground">Part {i + 1} · {KIND_LABEL[m.kind]} · {m.minutes} min</div>
                 <div className="mt-1 font-semibold">{SCENARIOS[m.scenarioId]?.title ?? m.title}</div>
+                </div>
               </div>
               {m.status === 'submitted' ? (
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-success"><Check className="size-4" /> Done</span>
@@ -294,9 +297,9 @@ function Loading() {
 
 function Notice({ title, body, icon, embedded }: { title: string; body: string; icon?: React.ReactNode; embedded?: boolean }) {
   const card = (
-    <main className="mx-auto max-w-lg px-6 py-20">
-      <div className="rounded-xl border border-border bg-card p-8 text-center">
-        <div className="mx-auto grid size-12 place-items-center rounded-full border border-foreground">{icon ?? <Lock className="size-5" />}</div>
+    <main className="rb-rise mx-auto max-w-lg px-4 py-16 sm:px-6 sm:py-20">
+      <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)]">
+        <div className="mx-auto grid size-12 place-items-center rounded-full bg-accent text-accent-foreground">{icon ?? <Lock className="size-5" />}</div>
         <h1 className="mt-4 text-xl font-semibold">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
       </div>
@@ -381,9 +384,9 @@ function Intro({
         ? 'An AI agent wrote this recommendation. It may contain sound ideas and flawed reasoning side by side. Weigh each claim against the context and constraints.'
         : "Use the AI assistant however you like, just as you would at work. It can be wrong, so check what it gives you. You're responsible for the code you submit. Your chat with the assistant is shared with the hiring team."
   return (
-    <main className="mx-auto grid max-w-6xl gap-10 px-6 py-12 lg:grid-cols-[1fr_340px]">
+    <main className="rb-rise mx-auto grid max-w-7xl items-start gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div>
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
           {KIND_LABEL[scenario.kind]}{scenario.kind === 'build' ? '' : ` · ${scenario.ticketId}`}
         </p>
         <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight">{scenario.title}</h1>
@@ -400,25 +403,25 @@ function Intro({
         <ul className="mt-3 space-y-2.5">
           {bullets.map((c) => (
             <li key={c} className="flex gap-3 text-sm text-foreground/80">
-              <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <Check className="mt-0.5 size-4 shrink-0 text-primary" />
               {c}
             </li>
           ))}
         </ul>
 
-        <div className="mt-8 flex max-w-2xl gap-3 rounded-lg border border-border bg-card p-4">
-          <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="mt-8 flex max-w-2xl gap-3 rounded-xl border border-primary/20 bg-accent/60 p-4">
+          <Info className="mt-0.5 size-4 shrink-0 text-primary" />
           <p className="text-sm leading-relaxed text-muted-foreground">{note}</p>
         </div>
       </div>
 
-      <aside className="h-fit rounded-xl border border-border bg-card p-6">
+      <aside className="rounded-2xl border border-border bg-card p-6 shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)] lg:sticky lg:top-24">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">How it works</h2>
         <ol className="mt-4 space-y-3 text-sm">
           {steps.map(
             (s, i) => (
               <li key={s} className="flex items-center gap-3">
-                <span className="grid size-6 place-items-center rounded-full bg-muted font-mono text-xs font-semibold">{i + 1}</span>
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-accent font-mono text-xs font-semibold text-accent-foreground">{i + 1}</span>
                 {s}
               </li>
             ),
@@ -432,7 +435,7 @@ function Intro({
         <button
           onClick={onStart}
           disabled={starting}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         >
           {starting ? <Loader2 className="size-4 animate-spin" /> : null} Start <ArrowRight className="size-4" />
         </button>
@@ -465,10 +468,6 @@ function Review({
   const [composer, setComposer] = useState<{ line: number; severity: Severity; text: string; error: string } | null>(null)
   const [nextError, setNextError] = useState('')
   const [prompt, setPrompt] = useState('')
-  const question = (a: string) => {
-    setPrompt(`You assumed "${a.replace(/\.$/, '')}". How do you know that's true?`)
-    document.getElementById('assistant-input')?.focus()
-  }
   const file = useMemo(() => scenario.files.find((f) => f.path === activePath)!, [activePath, scenario])
 
   const openComposer = (line: number) => setComposer({ line, severity: 'high', text: '', error: '' })
@@ -536,22 +535,12 @@ function Review({
       <section className="min-w-0 flex-1 bg-card">
         {scenario.rationale || scenario.assumptions?.length ? (
           <div className="border-b border-border bg-background px-5 py-4">
-            <h2 className="text-sm font-semibold">The AI agent's notes</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">The AI agent's notes</h2>
             {scenario.rationale ? <p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">{scenario.rationale}</p> : null}
             {scenario.assumptions?.length ? (
-              <>
-                <h3 className="mt-3 text-xs font-semibold text-muted-foreground">Assumptions it made</h3>
-                <ul className="mt-2 space-y-2">
-                  {scenario.assumptions.map((a) => (
-                    <li key={a} className="flex flex-wrap items-start justify-between gap-2 text-sm text-foreground/80">
-                      <span className="min-w-0 flex-1">{a}</span>
-                      <button onClick={() => question(a)} className="shrink-0 rounded-md border border-border px-2 py-0.5 text-xs font-medium hover:bg-accent">
-                        Question this
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
+              <ul className="mt-2 max-w-3xl list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/80">
+                {scenario.assumptions.map((a) => <li key={a}>{a}</li>)}
+              </ul>
             ) : null}
           </div>
         ) : null}
@@ -636,7 +625,7 @@ function Review({
                         <button onClick={() => setComposer(null)} className="rounded-md border border-border px-3 py-1.5 text-sm font-medium">
                           Cancel
                         </button>
-                        <button onClick={saveComment} className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground">
+                        <button onClick={saveComment} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground">
                           Add comment
                         </button>
                       </div>
@@ -651,7 +640,7 @@ function Review({
 
       <aside className="flex flex-col border-t border-border bg-card lg:w-96 lg:shrink-0 lg:border-l lg:border-t-0">
         <div className="border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold">Ask the agent</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">Ask the agent</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">The AI that wrote this pull request. Ask why it did something.</p>
         </div>
         <AssistantChat
@@ -663,7 +652,7 @@ function Review({
           className="lg:max-h-[55vh] lg:flex-1"
         />
         <div className="border-t border-border p-5">
-        <h2 className="text-sm font-semibold">Verdict</h2>
+        <h2 className="text-[15px] font-semibold tracking-tight">Verdict</h2>
         <p className="mt-1 text-xs text-muted-foreground">Would you merge this PR as-is?</p>
         <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-border">
           {(['request_changes', 'approve'] as Verdict[]).map((v) => (
@@ -682,7 +671,7 @@ function Review({
         {nextError ? <p className="mt-2 text-[13px] text-destructive">{nextError}</p> : null}
         <button
           onClick={goNext}
-          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
         >
           Continue to questions <ArrowRight className="size-4" />
         </button>
@@ -715,13 +704,13 @@ function FollowUp({
     onSubmit()
   }
   return (
-    <main className="mx-auto max-w-2xl px-6 py-12">
-      <p className="text-xs text-muted-foreground">Step 3 of 3 · Follow-up questions</p>
+    <main className="rb-rise mx-auto max-w-2xl px-4 py-12 sm:px-6">
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Step 3 of 3 · Follow-up questions</p>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">A few short questions about your review</h1>
       <p className="mt-2 text-sm text-muted-foreground">Two to four sentences each is plenty.</p>
-      <div className="mt-8 space-y-7">
+      <div className="mt-8 space-y-5">
         {useScenario().followUps.map((q, i) => (
-          <div key={q}>
+          <div key={q} className="rounded-xl border border-border bg-card p-5">
             <label htmlFor={`q${i}`} className="block text-sm font-semibold leading-relaxed">
               {i + 1}. {q}
             </label>
@@ -734,7 +723,7 @@ function FollowUp({
                 setAnswers((prev) => prev.map((a, j) => (j === i ? val : a)))
                 setEmptyError('')
               }}
-              className="mt-2 w-full resize-y rounded-lg border border-input bg-card px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+              className="mt-3 w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/15"
               maxLength={4000}
             />
           </div>
@@ -746,7 +735,7 @@ function FollowUp({
         <button
           onClick={trySubmit}
           disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         >
           {submitting ? 'Submitting…' : 'Submit review'} <ArrowRight className="size-4" />
         </button>
@@ -758,9 +747,9 @@ function FollowUp({
 function Done({ name, token, groupToken }: { name?: string; token: string; groupToken?: string | null }) {
   const scenario = useScenario()
   return (
-    <main className="mx-auto max-w-lg px-6 py-20">
-      <div className="rounded-xl border border-border bg-card p-8 text-center">
-        <div className="mx-auto grid size-12 place-items-center rounded-full border border-foreground">
+    <main className="rb-rise mx-auto max-w-lg px-4 py-16 sm:px-6 sm:py-20">
+      <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)]">
+        <div className="mx-auto grid size-12 place-items-center rounded-full bg-success-soft text-success">
           <Check className="size-5" />
         </div>
         <h1 className="mt-4 text-xl font-semibold">Submitted</h1>
@@ -769,12 +758,12 @@ function Done({ name, token, groupToken }: { name?: string; token: string; group
           <p className="text-muted-foreground">The hiring team will look at your work and be in touch about next steps. You can close this page.</p>
           <p className="text-muted-foreground">
             If the hiring team shares your results, you'll find them at{' '}
-            <Link to="/results" search={{ t: token }} className="font-semibold text-foreground underline underline-offset-4">your results page</Link>,
+            <Link to="/results" search={{ t: token }} className="font-semibold text-primary underline underline-offset-4">your results page</Link>,
             where you can also ask for a human review.
           </p>
         </div>
         {groupToken ? (
-          <Link to="/assess" search={{ t: '', g: groupToken }} className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <Link to="/assess" search={{ t: '', g: groupToken }} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
             Continue to the next part <ArrowRight className="size-4" />
           </Link>
         ) : null}
@@ -810,10 +799,10 @@ function DecisionForm({
     onSubmit()
   }
   return (
-    <main className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[1fr_1fr]">
+    <main className="rb-rise mx-auto grid max-w-7xl items-start gap-6 px-4 py-8 sm:px-6 lg:grid-cols-2">
       <section className="space-y-5">
         <div className="rounded-xl border border-border bg-card p-6">
-          <h2 className="text-sm font-semibold">Context</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">Context</h2>
           <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-foreground/80">
             {scenario.context.map((c) => <li key={c}>{c}</li>)}
           </ul>
@@ -824,7 +813,7 @@ function DecisionForm({
         </div>
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">AI agent's recommendation</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">AI agent's recommendation</h2>
             <span className="font-mono text-xs text-muted-foreground">{scenario.ticketId}.md</span>
           </div>
           <ol className="mt-3 space-y-2 font-mono text-[13px] leading-relaxed">
@@ -838,7 +827,7 @@ function DecisionForm({
         </div>
       </section>
       <section className="rounded-xl border border-border bg-card p-6">
-        <h2 className="text-sm font-semibold">Your decision</h2>
+        <h2 className="text-[15px] font-semibold tracking-tight">Your decision</h2>
         <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-border">
           {(['request_changes', 'approve'] as Verdict[]).map((v) => (
             <button
@@ -874,7 +863,7 @@ function DecisionForm({
           <button
             onClick={trySubmit}
             disabled={submitting}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             {submitting ? 'Submitting…' : 'Submit critique'} <ArrowRight className="size-4" />
           </button>

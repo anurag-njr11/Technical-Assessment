@@ -6,8 +6,8 @@ import { MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import { interviewQuestions } from '@/lib/interview'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { BandChip, OutcomeChip, RecruiterNav, SeverityChip, TopBar, cleanError } from '@/components/rb'
-import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { BandChip, OutcomeChip, SeverityChip, cleanError } from '@/components/rb'
+import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
 import { AgentPR, EvidenceReport, Timeline, type TrajectoryResult } from '@/components/evidence'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
@@ -85,33 +85,18 @@ function Report() {
   const sub = useQuery(api.submissions.get, id ? { id } : 'skip')
   const regrade = useMutation(api.submissions.regrade)
 
-  const back = (
-    <>
-      <RecruiterNav />
-      <button onClick={() => window.print()} className="hidden items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground sm:inline-flex print:hidden">
-        <Printer className="size-4" /> PDF
-      </button>
-      <Link to="/recruiter" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Candidates
-      </Link>
-      <SignOutButton />
-    </>
+  const pdf = (
+    <button onClick={() => window.print()} className="hidden items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex print:hidden">
+      <Printer className="size-4" /> PDF
+    </button>
   )
 
-  if (!mounted || (id && sub === undefined)) {
-    return (
-      <div className="min-h-screen bg-background">
-        <TopBar right={back} />
-        <div className="grid place-items-center py-24"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
-      </div>
-    )
-  }
+  if (!mounted || (id && sub === undefined)) return <RecruiterPage loading />
   if (!id || !sub) {
     return (
-      <div className="min-h-screen bg-background">
-        <TopBar right={back} />
+      <RecruiterPage>
         <p className="py-24 text-center text-muted-foreground">Report not found.</p>
-      </div>
+      </RecruiterPage>
     )
   }
 
@@ -142,17 +127,20 @@ function Report() {
   const labels = COMPONENT_LABELS[kind]
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar subtitle="Candidate report" right={back} />
-      <main className="mx-auto grid max-w-7xl gap-6 px-6 py-8 xl:grid-cols-[1fr_320px]">
+    <RecruiterPage right={pdf}>
+      <Link to="/recruiter" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground print:hidden">
+        <ArrowLeft className="size-4" /> Candidates
+      </Link>
+      <div className="mt-4 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
-          <section className="flex flex-wrap items-center gap-6 rounded-xl border border-border bg-card p-6">
-            <div className="grid size-12 place-items-center rounded-full bg-muted text-sm font-semibold">
+          <section className="flex flex-wrap items-center gap-5 rounded-xl border border-border bg-card p-6 shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]">
+            <div className="grid size-12 shrink-0 place-items-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">
               {sub.candidateName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-lg font-semibold">{sub.candidateName}</h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Candidate report</p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight">{sub.candidateName}</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 {MODULE_LABEL[kind]} · {SCENARIOS[sub.scenarioId]?.ticketId ?? sub.scenarioId} · {sub.level} · {new Date(sub.submittedAt).toLocaleString()} · Verdict:{' '}
                 {sub.verdict === 'approve' ? 'Approve' : sub.verdict === 'none' ? 'None' : 'Request changes'}
                 {sub.autoSubmitted ? ' · Auto-submitted at the time limit' : ''}
@@ -160,7 +148,7 @@ function Report() {
             </div>
             {sub.status === 'graded' && result ? (
               <div className="flex items-center gap-4">
-                <div className="text-center">
+                <div className="rounded-xl border border-border bg-muted/40 px-4 py-2.5 text-center">
                   <div className="font-mono text-3xl font-semibold leading-none">{result.overall}</div>
                   <div className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{result.band}</div>
                 </div>
@@ -219,7 +207,7 @@ function Report() {
               ) : null}
 
               <section className="rounded-xl border border-border bg-card p-6">
-                <h2 className="text-sm font-semibold">Score breakdown</h2>
+                <h2 className="text-[15px] font-semibold tracking-tight">Score breakdown</h2>
                 <div className="mt-4 space-y-4">
                   {Object.entries(result.components).map(([key, c]) => (
                     <div key={key}>
@@ -232,7 +220,7 @@ function Report() {
                       </div>
                       <div className="mt-1.5 h-2 rounded-full bg-muted">
                         <div
-                          className={cn('h-full rounded-full', c.value < 0.34 ? 'bg-destructive' : 'bg-primary')}
+                          className={cn('h-full rounded-full transition-[width] duration-700', c.value < 0.34 ? 'bg-destructive' : 'bg-primary')}
                           style={{ width: `${Math.max(2, Math.round(c.value * 100))}%` }}
                         />
                       </div>
@@ -243,7 +231,7 @@ function Report() {
 
               {result.followUpQuality || result.communication || result.configNote ? (
                 <section className="rounded-xl border border-border bg-card p-6 text-sm">
-                  <h2 className="font-semibold">Also measured (not yet in the score)</h2>
+                  <h2 className="text-[15px] font-semibold tracking-tight">Also measured (not yet in the score)</h2>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
                     {result.communication ? (
                       <div><dt className="text-muted-foreground">Communication (SCR-2)</dt><dd><span className="font-mono">{Math.round(result.communication.value * 100)}%</span> · {result.communication.detail}</dd></div>
@@ -267,7 +255,7 @@ function Report() {
 
               {result.extraComments.length > 0 ? (
                 <section className="rounded-xl border border-border bg-card p-6">
-                  <h2 className="text-sm font-semibold">Other comments</h2>
+                  <h2 className="text-[15px] font-semibold tracking-tight">Other comments</h2>
                   <div className="mt-3 space-y-3">
                     {result.extraComments.map((e, i) => (
                       <div key={i} className="rounded-lg border border-border p-3">
@@ -306,7 +294,7 @@ function Report() {
           {result && kind !== 'build' ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
           {result && kind !== 'build' ? <EvalPanel submissionId={sub._id} result={result} /> : null}
           {sub.followUps.length ? <section className="rounded-xl border border-border bg-card p-5">
-            <h2 className="text-sm font-semibold">{kind === 'decision' ? 'Critique' : 'Follow-up answers'}</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">{kind === 'decision' ? 'Critique' : 'Follow-up answers'}</h2>
             <div className="mt-3 space-y-4">
               {sub.followUps.map((f, i) => (
                 <div key={i}>
@@ -326,7 +314,7 @@ function Report() {
 
           {result ? (
             <section className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-sm font-semibold">Judge panel</h2>
+              <h2 className="text-[15px] font-semibold tracking-tight">Judge panel</h2>
               <ul className="mt-3 space-y-2 text-sm">
                 {result.judges.map((j) => (
                   <li key={j.name} className="flex justify-between gap-3">
@@ -353,15 +341,15 @@ function Report() {
           ) : null}
 
           <section className="rounded-xl border border-border bg-card p-5">
-            <h2 className="text-sm font-semibold">Overall</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Overall</h2>
             <div className="mt-3">
               <BandChip band={result?.band} score={result?.overall} />
             </div>
           </section>
           <DeletePanel submissionId={sub._id} />
         </aside>
-      </main>
-    </div>
+      </div>
+    </RecruiterPage>
   )
 }
 
@@ -439,7 +427,7 @@ function Votes({ votes, mode }: { votes: VoteT[]; mode: 'issue' | 'decoy' | 'cla
 // ---------------------------------------------------------------------------
 
 const inputCls = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30'
-const btnCls = 'rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60'
+const btnCls = 'rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60'
 
 function OverrideForm({ item, submissionId, comments, onDone }: { item: ItemT; submissionId: string; comments: SubComment[]; onDone: () => void }) {
   const override = useMutation(api.reviews.overrideItem)
@@ -543,7 +531,7 @@ function HumanReview({ submissionId, needsReview, resolved }: { submissionId: st
   if (!needsReview && history.length === 0 && !resolved) return null
   return (
     <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Human review</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Human review</h2>
       {history.length === 0 ? (
         <p className="mt-2 text-sm text-muted-foreground">No overrides yet. Use “Override outcome” on any item, or “Reclassify” on other comments.</p>
       ) : (
@@ -619,7 +607,7 @@ function GoldenPanel({ submissionId, items }: { submissionId: string; items: Ite
   }
   return (
     <section className="rounded-xl border border-border bg-card p-5">
-      <h2 className="text-sm font-semibold">Golden set</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Golden set</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         Grade this review yourself, without looking at the judges, to measure council accuracy.{' '}
         {mine ? `${mine.graders.length} grader(s) so far.` : ''}
@@ -681,7 +669,7 @@ function EvalPanel({ submissionId, result }: { submissionId: string; result: { c
   const tokens = calls?.reduce((s, c) => s + c.estTokens, 0) ?? 0
   return (
     <section className="rounded-xl border border-border bg-card p-5">
-      <h2 className="text-sm font-semibold">Evaluation</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Evaluation</h2>
       {calls ? (
         <p className="mt-1 text-xs text-muted-foreground">
           {calls.length} traced judge calls{failed ? `, ${failed} failed over` : ''} · ~{tokens.toLocaleString()} tokens
@@ -739,7 +727,7 @@ function InterviewGuide({ items, kind }: { items: ItemT[]; kind: string }) {
   if (!qs.length) return null
   return (
     <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Suggested interview questions</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Suggested interview questions</h2>
       <p className="mt-1 text-xs text-muted-foreground">Generated from this candidate's gaps and strengths. Structured questions, asked of every candidate with the same gap, are the most predictive.</p>
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
         {qs.map((q) => <li key={q.q}><span>{q.q}</span> <span className="text-xs text-muted-foreground">({q.why})</span></li>)}
@@ -753,7 +741,7 @@ function SharePanel({ submissionId, released }: { submissionId: string; released
   const [error, setError] = useState('')
   return (
     <section className="rounded-xl border border-border bg-card p-5 print:hidden">
-      <h2 className="text-sm font-semibold">Candidate feedback</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Candidate feedback</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         {released
           ? 'The candidate can see a summary (score, components, strengths and gaps by category) on their results page. Planted issues stay private.'
@@ -779,7 +767,7 @@ function InsightsPanel({ submissionId }: { submissionId: string }) {
     setOutcome({ id: submissionId as Id<'submissions'>, hired, rating }).catch((err) => setError(cleanError(err)))
   return (
     <section className="rounded-xl border border-border bg-card p-5 text-sm">
-      <h2 className="font-semibold">Context</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Context</h2>
       <dl className="mt-2 space-y-1.5">
         <div className="flex justify-between gap-3">
           <dt className="text-muted-foreground">vs your engineers</dt>

@@ -24,6 +24,7 @@ import type * as http from "../http.js";
 import type * as insights from "../insights.js";
 import type * as items from "../items.js";
 import type * as judges from "../judges.js";
+import type * as macaly from "../macaly.js";
 import type * as metrics from "../metrics.js";
 import type * as rateLimit from "../rateLimit.js";
 import type * as reliability from "../reliability.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   insights: typeof insights;
   items: typeof items;
   judges: typeof judges;
+  macaly: typeof macaly;
   metrics: typeof metrics;
   rateLimit: typeof rateLimit;
   reliability: typeof reliability;

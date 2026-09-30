@@ -45,7 +45,7 @@ export function EvidenceReport({ trajectory, overall, band, code, events }: { tr
     <>
       <section className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-semibold">Why this score</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">Why this score</h2>
           <span className="text-sm">
             Overall <span className="font-mono text-lg font-semibold">{overall}</span> <span className="text-muted-foreground">· {band}</span>
           </span>
@@ -72,7 +72,7 @@ export function EvidenceReport({ trajectory, overall, band, code, events }: { tr
 
       {split.length > 0 ? (
         <section className="rounded-xl border border-warning/30 bg-card p-6">
-          <h2 className="text-sm font-semibold">Judge disagreements</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">Judge disagreements</h2>
           <ul className="mt-3 divide-y divide-border">
             {split.map((f) => (
               <li key={f.id} className="py-3 text-sm">
@@ -96,7 +96,7 @@ export function EvidenceReport({ trajectory, overall, band, code, events }: { tr
         if (!fs.length) return null
         return (
           <section key={g.kind} className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-sm font-semibold">{g.title} <span className="font-normal text-muted-foreground">({fs.length})</span></h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">{g.title} <span className="font-normal text-muted-foreground">({fs.length})</span></h2>
             <div className="mt-3 space-y-3">
               {fs.map((f) => <FindingCard key={f.id} f={f} dimension={dimLabel[f.dimension] ?? f.dimension} onJump={jump} />)}
             </div>
@@ -174,7 +174,7 @@ export function AgentPR({ scenario, findings }: { scenario: Scenario; findings: 
   const challenges = findings.filter((f) => f.dimension === 'challengeAssumptions')
   return (
     <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">AI-generated PR · {scenario.ticketId} {scenario.title}</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">AI-generated PR · {scenario.ticketId} {scenario.title}</h2>
       <p className="mt-2 text-sm"><span className="font-semibold">Agent rationale: </span><span className="text-muted-foreground">{scenario.rationale}</span></p>
       <h3 className="mt-4 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">Agent assumptions</h3>
       <ol className="mt-2 space-y-1.5 text-sm">
@@ -236,7 +236,7 @@ export function Timeline({ code, events, highlight }: { code: string; events: Bu
   const mmss = (t: number) => `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}`
   return (
     <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Interaction timeline ({events.length} events)</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Interaction timeline ({events.length} events)</h2>
       <ol className="mt-3 max-h-[36rem] space-y-2 overflow-y-auto pr-1 text-sm">
         {events.filter((e) => e.type !== 'fault_injected').map((e) => {
           const fault = faults.get(e.id)

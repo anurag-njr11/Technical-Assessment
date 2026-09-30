@@ -137,13 +137,12 @@ describe("PR-author chat on code reviews", () => {
     expect(bodies[0].messages[1].content).toContain("+24:     gateway.refund(payment.gateway_ref, amount)")
 
     vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 503 })))
-    const fallback = await t.action(api.builds.ask, { token, prompt: "Why is logging the card number fine?" })
-    expect(fallback.text).toMatch(/^I made that choice because logging the full card number/)
+    await expect(t.action(api.builds.ask, { token, prompt: "Why is logging the card number fine?" })).rejects.toThrow(/didn't reply/)
 
     await t.mutation(api.submissions.submit, { token, verdict: "request_changes", comments: [], answers: ANSWERS })
     const sub = (await t.run(async (ctx) => ctx.db.query("submissions").first()))!
     const responses = sub.build!.events.filter((e) => e.type === "ai_response")
-    expect(responses.map((e) => e.tokens)).toEqual([{ input: 900, output: 12 }, expect.objectContaining({ input: expect.any(Number) })])
+    expect(responses.map((e) => e.tokens)).toEqual([{ input: 900, output: 12 }])
     expect(sub.build!.events.some((e) => e.type === "fault_injected")).toBe(false)
   })
 

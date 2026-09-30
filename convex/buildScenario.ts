@@ -69,20 +69,10 @@ export function buildTask(scenarioId: string): string {
     const diff = s.files.flatMap((f) => [`--- ${f.path}`, ...f.lines.map((l) => `${l.kind === "add" ? "+" : " "}${l.n}: ${l.code}`)])
     return [
       `${s.ticketId}: ${s.title}`, s.summary, "Acceptance criteria:", ...s.criteria.map((c) => `- ${c}`),
-      "Diff:", ...diff, "Your rationale:", s.rationale, "Your assumptions:", ...s.assumptions.map((a) => `- ${a}`),
+      "Diff:", ...diff, "Your rationale:", s.rationale, "Your reasoning behind the changes:", ...s.assumptions.map((a) => `- ${a}`),
     ].join("\n")
   }
   return ""
-}
-
-/** Scripted PR-author reply (no LLM): the stated assumption that best matches the question. */
-export function authorReply(scenarioId: string, prompt: string): string {
-  const s = SCENARIOS[scenarioId]
-  if (s?.kind !== "code") return ""
-  const words = new Set(prompt.toLowerCase().match(/[a-z_]{4,}/g) ?? [])
-  const score = (a: string) => (a.toLowerCase().match(/[a-z_]{4,}/g) ?? []).filter((w) => words.has(w)).length
-  const best = s.assumptions.reduce((b, a) => (score(a) > score(b) ? a : b), s.assumptions[0])
-  return `I made that choice because ${(score(best) > 0 ? best : s.rationale).replace(/^(?!I )./, (c) => c.toLowerCase())}`
 }
 
 export type Script = { intent: RegExp; text: string; code: string; fault?: string }

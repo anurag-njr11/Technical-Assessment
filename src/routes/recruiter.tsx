@@ -4,9 +4,10 @@ import { useMutation, useQuery } from 'convex/react'
 import { AlertTriangle, Check, Copy, Download, Loader2, X } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { BandChip, RecruiterNav, TopBar, cleanError } from '@/components/rb'
+import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
 import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
-import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
+import { cn } from '@/lib/utils'
 import { AssessmentLink } from '@/components/assessment-link'
 import siteMetadata from '@/metadata.json'
 
@@ -44,42 +45,45 @@ function Recruiter() {
   )
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar
-        subtitle="Recruiter dashboard"
-        right={
-          <>
-            <RecruiterNav />
-            <SignOutButton />
-          </>
-        }
+    <RecruiterPage>
+      <PageHeader
+        eyebrow="Recruiter dashboard"
+        title="Assessments"
+        description="Create an assessment, share its link or QR code, then open each candidate's evidence-backed report."
       />
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Assessments</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Create an assessment, share its link or QR code, then open each candidate's evidence-backed report.</p>
 
-        <AssessmentsPanel />
+      <div className="rb-stagger mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat label="Submitted" value={rows?.length ?? 0} />
+        <Stat label="Graded" value={completed} />
+        <Stat label="Awaiting human review" value={flagged} tone={flagged ? 'danger' : undefined} />
+      </div>
 
-        <h2 className="mt-10 text-lg font-semibold tracking-tight">All submissions</h2>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Stat label="Submitted" value={rows?.length ?? 0} />
-          <Stat label="Graded" value={completed} />
-          <Stat label="Awaiting human review" value={flagged} tone={flagged ? 'danger' : undefined} />
-        </div>
+      <AssessmentsPanel />
 
-        <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:items-center">
+      <Panel
+        flush
+        className="mt-8"
+        title="All submissions"
+        description="Every attempt across your assessments."
+        actions={
+          <button onClick={() => rows && downloadCsv(rows)} disabled={!rows?.length} className={btn.secondary}>
+            <Download className="size-4" /> Export CSV
+          </button>
+        }
+      >
+        <div className="mt-4 flex flex-col gap-2 border-y border-border bg-muted/40 px-5 py-3 sm:flex-row sm:items-center sm:px-6">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search candidates"
             aria-label="Search candidates"
-            className="rounded-md border border-input bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 sm:w-64"
+            className={cn(fieldCls, 'sm:w-72')}
           />
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as StatusFilter)}
             aria-label="Filter by status"
-            className="rounded-md border border-input bg-card px-3 py-2 text-sm"
+            className={cn(fieldCls, 'sm:w-44')}
           >
             <option value="all">All statuses</option>
             <option value="grading">Grading</option>
@@ -87,20 +91,14 @@ function Recruiter() {
             <option value="review">Needs review</option>
             <option value="error">Error</option>
           </select>
-          <button
-            onClick={() => rows && downloadCsv(rows)}
-            disabled={!rows?.length}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium disabled:opacity-50 sm:ml-auto"
-          >
-            <Download className="size-4" /> Export CSV
-          </button>
+          {visible ? <span className="text-xs text-muted-foreground sm:ml-auto">{visible.length} shown</span> : null}
         </div>
 
-        <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                <th className="px-5 py-3 font-semibold">Candidate</th>
+                <th className="px-6 py-3 font-semibold">Candidate</th>
                 <th className="px-5 py-3 font-semibold">Module</th>
                 <th className="px-5 py-3 font-semibold">Score</th>
                 <th className="px-5 py-3 font-semibold">Issues found</th>
@@ -123,9 +121,9 @@ function Recruiter() {
                 </tr>
               ) : (
                 visible.map((r) => (
-                  <tr key={r._id} className="border-b border-border last:border-0 hover:bg-accent/50">
-                    <td className="px-5 py-4">
-                      <Link to="/report" search={{ id: r._id }} className="font-semibold hover:underline">
+                  <tr key={r._id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
+                    <td className="px-6 py-4">
+                      <Link to="/report" search={{ id: r._id }} className="font-semibold hover:text-primary hover:underline">
                         {r.candidateName}
                       </Link>
                     </td>
@@ -164,14 +162,15 @@ function Recruiter() {
             </tbody>
           </table>
         </div>
+      </Panel>
 
-        <details className="mt-10 rounded-xl border border-border bg-card px-6 py-4">
-          <summary className="cursor-pointer text-sm font-semibold">Single-use invites &amp; hiring team</summary>
-          <InvitePanel />
-          <TeamPanel />
-        </details>
-      </main>
-    </div>
+      <h2 className="mt-12 text-lg font-semibold tracking-tight">Invites &amp; hiring team</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Single-use candidate links, and who on your team can see results.</p>
+      <div className="mt-4 grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
+        <InvitePanel />
+        <TeamPanel />
+      </div>
+    </RecruiterPage>
   )
 }
 
@@ -182,7 +181,7 @@ const SCENARIO_LIST = Object.values(SCENARIOS)
 // Flagship: AI PR review with the agent (code review + agent chat).
 const DEFAULT_SCENARIO = SCENARIOS['pay-217-mid'] ?? SCENARIO_LIST[0]
 const levelOf = (id: string) => (LEVELS.includes(SCENARIOS[id].level) ? SCENARIOS[id].level : 'Junior')
-const fieldCls = 'rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/30'
+const fieldCls = 'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/15'
 
 function AssessmentsPanel() {
   const assessments = useQuery(api.assessments.list)
@@ -219,16 +218,15 @@ function AssessmentsPanel() {
 
   return (
     <>
-      <section className="mt-6 rounded-xl border border-border bg-card p-6">
-        <h2 className="text-sm font-semibold">Create assessment</h2>
-        <form onSubmit={send} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_2fr_120px_120px]">
-          <label className="grid gap-1 text-xs text-muted-foreground">
+      <Panel className="mt-8" title="Create assessment" description="Pick a role and module. Everyone who opens the link gets their own attempt.">
+        <form onSubmit={send} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_2fr_140px_140px]">
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
             Role
             <select value={role} onChange={(e) => setRole(e.target.value)} className={fieldCls}>
               {ROLES.map((r) => <option key={r}>{r}</option>)}
             </select>
           </label>
-          <label className="grid gap-1 text-xs text-muted-foreground">
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
             Module
             <select value={scenarioId} onChange={(e) => pickScenario(e.target.value)} className={fieldCls}>
               {SCENARIO_LIST.map((sc) => (
@@ -236,43 +234,44 @@ function AssessmentsPanel() {
               ))}
             </select>
           </label>
-          <label className="grid gap-1 text-xs text-muted-foreground">
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
             Level
             <select value={level} onChange={(e) => setLevel(e.target.value)} className={fieldCls}>
               {LEVELS.map((l) => <option key={l}>{l}</option>)}
             </select>
           </label>
-          <label className="grid gap-1 text-xs text-muted-foreground">
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
             Time limit (min)
             <input type="number" min={10} max={90} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={fieldCls} />
           </label>
-          <label className="inline-flex items-center gap-2 text-sm sm:col-span-2 lg:col-span-3">
-            <input type="checkbox" checked={aiCapable && aiAssisted} disabled={!aiCapable} onChange={(e) => setAiAssisted(e.target.checked)} />
-            AI-assisted
+          <label className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm sm:col-span-2 lg:col-span-3">
+            <input type="checkbox" className="accent-primary" checked={aiCapable && aiAssisted} disabled={!aiCapable} onChange={(e) => setAiAssisted(e.target.checked)} />
+            <span className="font-medium">AI-assisted</span>
             <span className="text-xs text-muted-foreground">
               {aiCapable ? 'Candidate works with an AI assistant; judges score the whole interaction.' : 'Not available for decision reviews.'}
             </span>
           </label>
-          <button type="submit" disabled={busy} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-            {busy ? 'Creating…' : 'Create'}
+          <button type="submit" disabled={busy} className={cn(btn.primary, 'whitespace-nowrap')}>
+            {busy ? 'Creating…' : 'Create assessment'}
           </button>
         </form>
         {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
         {created ? (
-          <div className="mt-5 border-t border-border pt-5">
+          <div className="rb-rise mt-5 border-t border-border pt-5">
             <AssessmentLink token={created.token} />
-            <Link to="/assessment" search={{ id: created.id }} className="mt-3 inline-block text-sm font-semibold hover:underline">
+            <Link to="/assessment" search={{ id: created.id }} className="mt-3 inline-block text-sm font-semibold text-primary hover:underline">
               View candidates →
             </Link>
           </div>
         ) : null}
-      </section>
+      </Panel>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
+      <Panel flush className="mt-5" title="Your assessments" description="Open one to see its candidates and compare them side by side.">
+      <div className="mt-4 overflow-x-auto border-t border-border">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-              <th className="px-5 py-3 font-semibold">Assessment</th>
+              <th className="px-6 py-3 font-semibold">Assessment</th>
               <th className="px-5 py-3 font-semibold">Module</th>
               <th className="px-5 py-3 font-semibold">Joined</th>
               <th className="px-5 py-3 font-semibold">In progress</th>
@@ -288,9 +287,9 @@ function AssessmentsPanel() {
               <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground">No assessments yet. Create one above.</td></tr>
             ) : (
               assessments.map((a) => (
-                <tr key={a._id} className="border-b border-border last:border-0 hover:bg-accent/50">
-                  <td className="px-5 py-4">
-                    <Link to="/assessment" search={{ id: a._id }} className="font-semibold hover:underline">{a.title}</Link>
+                <tr key={a._id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
+                  <td className="px-6 py-4">
+                    <Link to="/assessment" search={{ id: a._id }} className="font-semibold hover:text-primary hover:underline">{a.title}</Link>
                     <div className="text-xs text-muted-foreground">{a.role} · {a.level} · {a.minutes} min{a.aiAssisted ? ' · AI-assisted' : ''}</div>
                   </td>
                   <td className="px-5 py-4 text-muted-foreground">{SCENARIOS[a.scenarioId]?.ticketId ?? a.scenarioId}</td>
@@ -298,13 +297,14 @@ function AssessmentsPanel() {
                   <td className="px-5 py-4 font-mono">{a.counts.started}</td>
                   <td className="px-5 py-4 font-mono">{a.counts.submitted}</td>
                   <td className="px-5 py-4 font-mono">{a.avgScore === null ? '—' : Math.round(a.avgScore)}</td>
-                  <td className="px-5 py-4 capitalize text-muted-foreground">{a.status}</td>
+                  <td className="px-5 py-4"><StatusPill status={a.status} /></td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+      </Panel>
     </>
   )
 }
@@ -339,13 +339,11 @@ function TeamPanel() {
   }
 
   return (
-    <section className="mt-10 rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Hiring team</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Only team members can see results and answer keys.
-        {isOwner ? ' Invited people get access after they sign up and verify that email.' : ''}
-      </p>
-      <ul className="mt-4 divide-y divide-border">
+    <Panel
+      title="Hiring team"
+      description={`Only team members can see results and answer keys.${isOwner ? ' Invited people get access after they sign up and verify that email.' : ''}`}
+    >
+      <ul className="divide-y divide-border">
         {team.members.map((m) => (
           <li key={m._id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
             <span className="truncate">
@@ -389,19 +387,15 @@ function TeamPanel() {
             onChange={(e) => { setEmail(e.target.value); setError('') }}
             placeholder="teammate@company.com"
             aria-label="Teammate email"
-            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+            className={cn(fieldCls, 'flex-1')}
           />
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-          >
+          <button type="submit" disabled={busy} className={btn.primary}>
             Invite
           </button>
         </form>
       ) : null}
       {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
-    </section>
+    </Panel>
   )
 }
 
@@ -469,13 +463,12 @@ function InvitePanel() {
     return true
   })
   return (
-    <section className="mt-8 rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Invite a candidate</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Each candidate gets a personal, single-use link. The link is copied to your clipboard when you create it.
-      </p>
-      <form onSubmit={send} className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_140px_auto]">
-        <select value={assessment} onChange={(e) => setAssessment(e.target.value)} aria-label="Assessment" className="rounded-md border border-input bg-background px-3 py-2 text-sm sm:col-span-4">
+    <Panel
+      title="Invite a candidate"
+      description="Each candidate gets a personal, single-use link. The link is copied to your clipboard when you create it."
+    >
+      <form onSubmit={send} className="grid gap-2.5 sm:grid-cols-2">
+        <select value={assessment} onChange={(e) => setAssessment(e.target.value)} aria-label="Assessment" className={cn(fieldCls, 'sm:col-span-2')}>
           <optgroup label="Single module">
             {Object.values(SCENARIOS).map((sc) => (
               <option key={sc.id} value={`scenario:${sc.id}`}>{MODULE_LABEL[sc.kind]} · {sc.ticketId} {sc.title} ({sc.level}, {sc.minutes} min)</option>
@@ -490,18 +483,18 @@ function InvitePanel() {
           </optgroup>
         </select>
         <input value={name} onChange={(e) => { setName(e.target.value); setError('') }} placeholder="Candidate name" aria-label="Candidate name" required maxLength={120}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30" />
+          className={fieldCls} />
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" aria-label="Candidate email" type="email"
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30" />
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          Extra min
+          className={fieldCls} />
+        <label className="flex items-center gap-2 whitespace-nowrap text-xs font-medium text-muted-foreground">
+          Extra minutes
           <input value={extra} onChange={(e) => setExtra(e.target.value)} type="number" min={0} max={120} aria-label="Extra minutes (accommodation)"
-            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground" />
+            className={fieldCls} />
         </label>
-        <button type="submit" disabled={busy} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+        <button type="submit" disabled={busy} className={btn.primary}>
           Create link
         </button>
-        <details className="text-xs text-muted-foreground sm:col-span-4">
+        <details className="text-xs text-muted-foreground sm:col-span-2">
           <summary className="cursor-pointer font-semibold">More options</summary>
           <div className="mt-2 flex flex-wrap items-center gap-4">
             <label className="inline-flex items-center gap-2">
@@ -511,7 +504,7 @@ function InvitePanel() {
             <label className="inline-flex items-center gap-2">
               Self-identified group (optional, with consent)
               <input value={group} onChange={(e) => setGroup(e.target.value)} maxLength={60} aria-label="Self-identified group"
-                className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground" />
+                className="rounded-lg border border-input bg-card px-2 py-1 text-sm text-foreground" />
             </label>
           </div>
         </details>
@@ -553,7 +546,7 @@ function InvitePanel() {
           ))}
         </ul>
       ) : null}
-    </section>
+    </Panel>
   )
 }
 
@@ -575,9 +568,19 @@ function downloadCsv(rows: Array<Record<string, unknown>>) {
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: 'danger' }) {
   return (
-    <div className={tone === 'danger' ? 'min-w-40 rounded-xl border border-destructive/30 bg-card px-5 py-4' : 'min-w-40 rounded-xl border border-border bg-card px-5 py-4'}>
-      <div className={tone === 'danger' ? 'font-mono text-2xl font-semibold text-destructive' : 'font-mono text-2xl font-semibold'}>{value}</div>
-      <div className={tone === 'danger' ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>{label}</div>
+    <div className={cn('rounded-xl border bg-card px-5 py-4 shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]', tone === 'danger' ? 'border-destructive/30' : 'border-border')}>
+      <div className={cn('text-xs font-medium', tone === 'danger' ? 'text-destructive' : 'text-muted-foreground')}>{label}</div>
+      <div className={cn('mt-1 font-mono text-3xl font-semibold tracking-tight', tone === 'danger' && 'text-destructive')}>{value}</div>
     </div>
+  )
+}
+
+function StatusPill({ status }: { status: string }) {
+  const active = status === 'active'
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize', active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground')}>
+      <span className={cn('size-1.5 rounded-full', active ? 'bg-success' : 'bg-muted-foreground/60')} />
+      {status}
+    </span>
   )
 }

@@ -3,7 +3,7 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { AuthLoading, Authenticated, Unauthenticated, useMutation, useQuery } from 'convex/react'
 import { Loader2, LogOut, ShieldCheck } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { TopBar } from '@/components/rb'
+import { Page, PageSpinner, RecruiterNav } from '@/components/rb'
 
 /**
  * Wraps every recruiter-only page. Candidates never see this: they take the
@@ -36,10 +36,28 @@ export function SignOutButton() {
   return (
     <button
       onClick={() => void signOut()}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+      aria-label="Sign out"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
-      <LogOut className="size-3.5" /> Sign out
+      <LogOut className="size-3.5" /> <span className="hidden sm:inline">Sign out</span>
     </button>
+  )
+}
+
+/** Frame for every signed-in recruiter page: recruiter nav, extra actions, sign out. */
+export function RecruiterPage({
+  right,
+  loading,
+  children,
+}: {
+  right?: React.ReactNode
+  loading?: boolean
+  children?: React.ReactNode
+}) {
+  return (
+    <Page nav={<RecruiterNav />} right={<>{right}<SignOutButton /></>}>
+      {loading ? <PageSpinner /> : children}
+    </Page>
   )
 }
 
@@ -53,10 +71,9 @@ function FullPageSpinner() {
 
 function Shell({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar subtitle="Hiring team" right={right} />
-      <main className="mx-auto flex max-w-md flex-col px-6 py-16">{children}</main>
-    </div>
+    <Page subtitle="Hiring team" right={right} width="form" className="sm:py-20">
+      {children}
+    </Page>
   )
 }
 
@@ -86,7 +103,7 @@ function Membership({ children }: { children: React.ReactNode }) {
   return (
     <Shell right={<SignOutButton />}>
       <Card>
-        <div className="grid size-10 place-items-center rounded-md border border-border">
+        <div className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
           <ShieldCheck className="size-5" />
         </div>
         {!me.workspaceClaimed ? (
@@ -126,7 +143,7 @@ function Membership({ children }: { children: React.ReactNode }) {
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl border border-border bg-card p-7">{children}</div>
+  return <div className="rounded-2xl border border-border bg-card p-7 shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)] sm:p-8">{children}</div>
 }
 
 function PrimaryButton({
@@ -145,7 +162,7 @@ function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={busy}
-      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-60"
     >
       {busy ? <Loader2 className="size-4 animate-spin" /> : null}
       {children}
@@ -183,7 +200,7 @@ function Field({
         value={value}
         onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         placeholder={placeholder}
-        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+        className="mt-1.5 w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/15"
       />
     </label>
   )
@@ -348,7 +365,8 @@ function SignInForms() {
 
   return (
     <Card>
-      <h1 className="text-xl font-semibold">{step === 'signIn' ? 'Sign in to your hiring workspace' : 'Create your account'}</h1>
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Hiring team</p>
+      <h1 className="mt-2 text-xl font-semibold tracking-tight">{step === 'signIn' ? 'Sign in to your hiring workspace' : 'Create your account'}</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Results and answer keys are only visible to your hiring team. Candidates don't need an account.
       </p>
@@ -359,7 +377,7 @@ function SignInForms() {
         <PrimaryButton type="submit" busy={busy}>{step === 'signIn' ? 'Sign in' : 'Create account'}</PrimaryButton>
       </form>
       <div className="mt-4 flex flex-wrap justify-between gap-2 text-sm">
-        <button onClick={() => reset(step === 'signIn' ? 'signUp' : 'signIn')} className="font-medium hover:underline">
+        <button onClick={() => reset(step === 'signIn' ? 'signUp' : 'signIn')} className="font-medium text-primary hover:underline">
           {step === 'signIn' ? 'Create an account' : 'Have an account? Sign in'}
         </button>
         {step === 'signIn' ? (

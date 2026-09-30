@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { CheckCircle2, CircleDashed, Loader2, XCircle } from 'lucide-react'
+import { CheckCircle2, CircleDashed, Download, XCircle } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { RecruiterNav, TopBar, cleanError } from '@/components/rb'
-import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { PageHeader, btn, cleanError } from '@/components/rb'
+import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
 
@@ -41,14 +41,15 @@ function StatusTag({ status }: { status: Status }) {
 
 function Tile({ id, label, value, detail, target, status }: { id: string; label: string; value: string; detail?: string; target: string; status: Status }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
+    <div className={cn('flex flex-col rounded-xl border border-border border-t-2 bg-card p-5', status === 'pass' ? 'border-t-success' : status === 'fail' ? 'border-t-destructive' : 'border-t-border')}>
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs font-semibold text-muted-foreground">{label}</div>
         <span className="font-mono text-[10px] text-muted-foreground">{id}</span>
       </div>
       <div className="mt-2 font-mono text-2xl font-semibold">{value}</div>
       {detail ? <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div> : null}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
+      <div className="min-h-3 flex-1" />
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
         <span className="text-xs text-muted-foreground">Target {target}</span>
         <StatusTag status={status} />
       </div>
@@ -73,32 +74,30 @@ function Reliability() {
     }
   }
 
-  if (!d) {
-    return (
-      <div className="min-h-screen bg-background">
-        <TopBar subtitle="Reliability" right={<><RecruiterNav /><SignOutButton /></>} />
-        <div className="grid place-items-center py-24"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
-      </div>
-    )
-  }
+  if (!d) return <RecruiterPage loading />
 
   const t = d.targets
   const kappa = d.agreement.pooled
   const s = (ok: boolean, n: number): Status => (n === 0 ? 'nodata' : ok ? 'pass' : 'fail')
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar subtitle="Reliability" right={<><RecruiterNav /><SignOutButton /></>} />
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Measuring the measurer</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          How well the judge council agrees with human graders, with itself and over time. Intervals are 95% (Wilson for
-          rates, bootstrap for kappa). {d.counts.graded} graded submissions · {d.counts.goldenSubmissions} in the golden set ·{' '}
-          {d.counts.labels} human labels. Scores should not drive hiring decisions until agreement meets target on at least
-          30–50 golden submissions.
-        </p>
+    <RecruiterPage>
+        <PageHeader
+          eyebrow="Reliability"
+          title="Measuring the measurer"
+          description={<>
+            How well the judge council agrees with human graders, with itself and over time. Intervals are 95% (Wilson for
+            rates, bootstrap for kappa). Scores should not drive hiring decisions until agreement meets target on at least
+            30–50 golden submissions.
+          </>}
+        />
+        <div className="mt-5 flex flex-wrap gap-2 text-xs">
+          {[`${d.counts.graded} graded submissions`, `${d.counts.goldenSubmissions} in the golden set`, `${d.counts.labels} human labels`].map((c) => (
+            <span key={c} className="rounded-full border border-border bg-card px-3 py-1 font-medium text-muted-foreground">{c}</span>
+          ))}
+        </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rb-stagger mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Tile id="SM-1" label="Council vs humans (QWK, issues)" value={fmt(kappa.kappa)} detail={`n=${kappa.n} · CI ${fmt(kappa.ci.lo)}–${fmt(kappa.ci.hi)}`}
             target={`≥ ${t.kappa}`} status={s(kappa.kappa >= t.kappa, kappa.n)} />
           <Tile id="SM-2" label="Test–retest std. dev." value={d.retest ? fmt(d.retest.std, 1) : '—'} detail={d.retest ? `${d.retest.n} runs: ${d.retest.scores.join(', ')}` : 'Run from a report'}
@@ -119,7 +118,7 @@ function Reliability() {
 
         <section className="mt-8 grid gap-5 lg:grid-cols-2">
           <div className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-sm font-semibold">Agreement per item (REL-2)</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Agreement per item (REL-2)</h2>
             <table className="mt-3 w-full text-sm">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
@@ -144,7 +143,7 @@ function Reliability() {
           </div>
 
           <div className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-sm font-semibold">Per judge model (REL-4, REL-5)</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Per judge model (REL-4, REL-5)</h2>
             <table className="mt-3 w-full text-sm">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
@@ -171,7 +170,7 @@ function Reliability() {
 
         <section className="mt-5 grid gap-5 lg:grid-cols-2">
           <div className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-sm font-semibold">Regression gate (REL-7)</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Regression gate (REL-7)</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Before changing prompts, rubric, models or weights: run the golden set, compare with the baseline, and only ship if the gate passes.
             </p>
@@ -187,15 +186,15 @@ function Reliability() {
               </p>
             )}
             <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={() => run(() => startGolden({}), 'Golden-set run')} className="rounded-md border border-border px-3 py-1.5 text-sm">Run golden set</button>
-              <button onClick={() => run(() => startAdversarial({}), 'Adversarial suite')} className="rounded-md border border-border px-3 py-1.5 text-sm">Run adversarial suite</button>
+              <button onClick={() => run(() => startGolden({}), 'Golden-set run')} className={btn.secondary}>Run golden set</button>
+              <button onClick={() => run(() => startAdversarial({}), 'Adversarial suite')} className={btn.secondary}>Run adversarial suite</button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">Both use real judge calls (about 15 per submission or case).</p>
             {msg ? <p className="mt-2 text-sm">{msg}</p> : null}
           </div>
 
           <div className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-sm font-semibold">Weight calibration (§11.2)</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Weight calibration (§11.2)</h2>
             {d.calibration ? (
               <>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -218,7 +217,7 @@ function Reliability() {
 
         {d.adversarial ? (
           <section className="mt-5 rounded-xl border border-border bg-card p-6">
-            <h2 className="text-sm font-semibold">Latest adversarial run</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Latest adversarial run</h2>
             <ul className="mt-3 divide-y divide-border text-sm">
               {d.adversarial.cases.map((c) => (
                 <li key={c.label} className="flex flex-wrap items-center justify-between gap-3 py-2">
@@ -233,7 +232,7 @@ function Reliability() {
         <WorkspacePanels dashboard={d} />
 
         <section className="mt-5 rounded-xl border border-border bg-card p-6">
-          <h2 className="text-sm font-semibold">Recent evaluation runs (EX-1)</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">Recent evaluation runs (EX-1)</h2>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -263,8 +262,7 @@ function Reliability() {
             </table>
           </div>
         </section>
-      </main>
-    </div>
+    </RecruiterPage>
   )
 }
 
@@ -290,7 +288,7 @@ function WorkspacePanels({ dashboard }: { dashboard: unknown }) {
       <section className="mt-5 grid gap-5 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-start justify-between gap-2">
-            <h2 className="text-sm font-semibold">Adverse impact (FB-3, SM-6)</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Adverse impact (FB-3, SM-6)</h2>
             <StatusTag status={ai.pass === null ? 'nodata' : ai.pass ? 'pass' : 'fail'} />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">Selection = score ≥ {w.passScore}. Four-fifths rule: every group's rate must be ≥ 80% of the highest. Uses only self-identified, consented group data; internal engineers excluded.</p>
@@ -308,7 +306,7 @@ function WorkspacePanels({ dashboard }: { dashboard: unknown }) {
           </table>
         </div>
         <div className="rounded-xl border border-border bg-card p-6">
-          <h2 className="text-sm font-semibold">Predictive validity (CU-7)</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">Predictive validity (CU-7)</h2>
           <p className="mt-1 text-xs text-muted-foreground">Correlation between assessment score and 6-month manager rating for hired candidates (record outcomes on each report).</p>
           <p className="mt-3 font-mono text-2xl font-semibold">{Number.isFinite(w.validity.r) ? `r = ${w.validity.r.toFixed(2)}` : '—'}</p>
           <p className="text-xs text-muted-foreground">n = {w.validity.n} hired candidates with ratings (needs 3+)</p>
@@ -324,22 +322,22 @@ function WorkspacePanels({ dashboard }: { dashboard: unknown }) {
       <section className="mt-5 rounded-xl border border-border bg-card p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Experiment log (EX-5)</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Experiment log (EX-5)</h2>
             <p className="mt-1 text-xs text-muted-foreground">Record every change to prompts, rubric, models or weights: the hypothesis, what changed, what the gate said, and the decision.</p>
           </div>
-          <button onClick={auditPack} className="rounded-md border border-border px-3 py-1.5 text-sm">Download audit pack (JSON)</button>
+          <button onClick={auditPack} className={btn.secondary}><Download className="size-4" /> Audit pack (JSON)</button>
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <input value={form.hypothesis} onChange={(e) => setForm({ ...form, hypothesis: e.target.value })} placeholder="Hypothesis" aria-label="Hypothesis" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
-          <input value={form.change} onChange={(e) => setForm({ ...form, change: e.target.value })} placeholder="Change made" aria-label="Change made" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
-          <input value={form.result} onChange={(e) => setForm({ ...form, result: e.target.value })} placeholder="Result (e.g. gate: κ 0.78 → 0.81)" aria-label="Result" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          <input value={form.hypothesis} onChange={(e) => setForm({ ...form, hypothesis: e.target.value })} placeholder="Hypothesis" aria-label="Hypothesis" className="rounded-lg border border-input bg-card px-3 py-2 text-sm" />
+          <input value={form.change} onChange={(e) => setForm({ ...form, change: e.target.value })} placeholder="Change made" aria-label="Change made" className="rounded-lg border border-input bg-card px-3 py-2 text-sm" />
+          <input value={form.result} onChange={(e) => setForm({ ...form, result: e.target.value })} placeholder="Result (e.g. gate: κ 0.78 → 0.81)" aria-label="Result" className="rounded-lg border border-input bg-card px-3 py-2 text-sm" />
           <div className="flex gap-2">
-            <select value={form.decision} onChange={(e) => setForm({ ...form, decision: e.target.value as typeof form.decision })} aria-label="Decision" className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <select value={form.decision} onChange={(e) => setForm({ ...form, decision: e.target.value as typeof form.decision })} aria-label="Decision" className="flex-1 rounded-lg border border-input bg-card px-3 py-2 text-sm">
               <option value="pending">Pending</option><option value="adopt">Adopt</option><option value="reject">Reject</option>
             </select>
             <button
               onClick={() => add(form).then(() => setForm({ hypothesis: '', change: '', result: '', decision: 'pending' })).catch((e) => setErr(cleanError(e)))}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+              className={btn.primary}
             >
               Log
             </button>
