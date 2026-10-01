@@ -130,4 +130,19 @@ describe("access control", () => {
       delete process.env.WORKSPACE_OWNER_EMAIL
     }
   })
+
+  it("judge instructions are recruiter-only and contain no answer-key text", async () => {
+    const t = makeT()
+    const owner = await seedUser(t, "owner@acme.com")
+    const stranger = await seedUser(t, "stranger@else.com")
+    await t.withIdentity({ subject: owner }).mutation(api.access.claimWorkspace, {})
+    await expect(t.query(api.tracing.judgeInstructions, {})).rejects.toThrow(/Sign in required/)
+    await expect(t.withIdentity({ subject: stranger }).query(api.tracing.judgeInstructions, {})).rejects.toThrow(/access/)
+    const info = await t.withIdentity({ subject: owner }).query(api.tracing.judgeInstructions, {})
+    expect(info.system).toMatch(/untrusted data/)
+    expect(info.templates.map((x) => x.stage)).toEqual(["issue", "decoy", "classify", "followup", "trajectory"])
+    const all = info.templates.map((x) => x.text).join("\n")
+    expect(all).toContain("{planted issue title}")
+    expect(all).not.toMatch(/lines 0-0|line="0"/)
+  })
 })

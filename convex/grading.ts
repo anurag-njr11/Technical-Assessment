@@ -180,6 +180,22 @@ Checklist:
 Return JSON: {"addresses_question": boolean, "specific": boolean, "actionable": boolean, "evidence": string}`
 }
 
+/** The exact prompts the judges receive, with placeholders instead of answer-key and candidate text (EX-2 transparency). */
+export function promptTemplates(): Array<{ stage: string; label: string; text: string }> {
+  const item: KeyItem = {
+    id: "{id}", kind: "issue", title: "{planted issue title}", category: "", severity: "high", weight: 0,
+    file: "{file}", lineStart: 0, lineEnd: 0, description: "{what is wrong}", acceptableFix: "{acceptable fix}",
+  }
+  const comment: Comment = { id: "c", file: "{file}", line: 0, severity: "", text: "{candidate comment}" }
+  const fill = (t: string) => t.replaceAll("lines 0-0", "lines {start}-{end}").replaceAll('line="0"', 'line="{line}"').replaceAll(" 0-0)", " {start}-{end})")
+  return [
+    { stage: "issue", label: "Planted issue: did the comment find it?", text: fill(issuePrompt(item, comment)) },
+    { stage: "decoy", label: "Decoy: did the comment wrongly object?", text: fill(decoyPrompt({ ...item, kind: "decoy", title: "{intentional behaviour}", description: "{why it is correct}" }, comment)) },
+    { stage: "classify", label: "Other comments: valid extra, nitpick or false alarm?", text: fill(classifyPrompt([item], comment)) },
+    { stage: "followup", label: "Follow-up answers", text: followUpPrompt("{follow-up question}", "{candidate answer}") },
+  ]
+}
+
 function unavailableVote(judge: Judge, a: JudgeAnswer, reason: string): Vote {
   return { judge: judge.name, model: a.model, family: a.family, decision: false, impact: false, fix: false, evidence: "", valid: false, discardedReason: reason }
 }

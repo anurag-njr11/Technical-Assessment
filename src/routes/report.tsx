@@ -304,6 +304,7 @@ function Report() {
           {result ? <InsightsPanel submissionId={sub._id} /> : null}
           {result && kind !== 'build' ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
           {result && kind !== 'build' ? <EvalPanel submissionId={sub._id} result={result} /> : null}
+          <JudgeInstructions />
           {sub.followUps.length ? <section className="rounded-xl border border-border bg-card p-5">
             <h2 className="text-[15px] font-semibold tracking-tight">{kind === 'decision' ? 'Critique' : 'Follow-up answers'}</h2>
             <div className="mt-3 space-y-4">
@@ -659,6 +660,32 @@ function GoldenPanel({ submissionId, items }: { submissionId: string; items: Ite
           {msg ? <p className="text-xs text-muted-foreground">{msg}</p> : null}
         </div>
       )}
+    </section>
+  )
+}
+
+// EX-2: recruiters can read exactly what the judges are told. Templates use
+// placeholders, so no answer-key text is shown here.
+function JudgeInstructions() {
+  const info = useQuery(api.tracing.judgeInstructions)
+  if (!info) return null
+  return (
+    <section className="rounded-xl border border-border bg-card p-5">
+      <h2 className="text-[15px] font-semibold tracking-tight">Judge instructions</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        The exact system prompt and checklists every judge receives. Prompt {info.promptVersion} · rubric {info.rubricVersion}.
+      </p>
+      <details className="mt-3 rounded-md border border-border">
+        <summary className="cursor-pointer px-3 py-2 text-sm font-medium">System prompt (all judges)</summary>
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">{info.system}</pre>
+      </details>
+      {info.templates.map((t) => (
+        <details key={t.stage} className="mt-2 rounded-md border border-border">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">{t.label}</summary>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">{t.text}</pre>
+        </details>
+      ))}
+      <p className="mt-2 text-xs text-muted-foreground">Text in {'{braces}'} is filled in per comment. Judges run at temperature 0.</p>
     </section>
   )
 }

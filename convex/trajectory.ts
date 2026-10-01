@@ -114,6 +114,8 @@ Answer about what the candidate actually did. Cite the event ids (the [ids] in t
 Return JSON: {"decision": boolean, "evidence": string (exact verbatim quote, 3-20 words, from one of the cited events; "" if decision is false), "event_ids": string[]}`
 }
 
+export const trajectoryPromptTemplate = () => prompt("{scenario context}", "{recorded chat, edits and test runs, each with an [id]}", "{dimension question}")
+
 type Consensus = { decision: boolean | null; agreement: string; confidence: Finding["confidence"]; needsReview: boolean }
 
 export function consensus(votes: Vote[]): Consensus {

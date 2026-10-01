@@ -1,6 +1,9 @@
 import { v } from "convex/values"
 import { internalMutation, query } from "./_generated/server"
 import { requireRecruiter } from "./access"
+import { PROMPT_VERSION, RUBRIC_VERSION, SYSTEM } from "./judges"
+import { promptTemplates } from "./grading"
+import { trajectoryPromptTemplate } from "./trajectory"
 
 // EX-2 / NFR-OBS-1: every judge call is logged with model, latency and output.
 
@@ -57,5 +60,22 @@ export const forSubmission = query({
       // Rough token estimate (~4 chars per token) for cost tracking (NFR-COST-1).
       estTokens: Math.round((r.inputChars + r.outputChars) / 4),
     }))
+  },
+})
+
+/** Recruiter-only: the judges' system prompt and prompt templates (no answer-key content). */
+export const judgeInstructions = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRecruiter(ctx)
+    return {
+      promptVersion: PROMPT_VERSION,
+      rubricVersion: RUBRIC_VERSION,
+      system: SYSTEM,
+      templates: [
+        ...promptTemplates(),
+        { stage: "trajectory", label: "How the candidate worked with the AI (chat and build)", text: trajectoryPromptTemplate() },
+      ],
+    }
   },
 })
