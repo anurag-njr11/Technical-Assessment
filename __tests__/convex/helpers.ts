@@ -74,25 +74,53 @@ function fakeJudge(model: string, prompt: string) {
 
 const chat = (content: string) => Response.json({ choices: [{ message: { content } }] })
 
+const MACALY_VARS = ["MACALY_API_TOKEN", "MACALY_BASE_URL", "MACALY_CHAT_ID", "MACALY_BYPASS_HEADER"] as const
+let savedMacaly: Record<string, string | undefined> = {}
+export const urls: string[] = []
+
+/**
+ * Tests run the OpenRouter path by default, even inside a Macaly sandbox where
+ * MACALY_API_TOKEN is set; call useMacalyTransport() to test the Macaly path.
+ */
 export function installFakeJudges() {
   for (const k of Object.keys(modes)) delete modes[k]
   prompts.length = 0
+  urls.length = 0
+  savedMacaly = Object.fromEntries(MACALY_VARS.map((k) => [k, process.env[k]]))
+  for (const k of MACALY_VARS) delete process.env[k]
   process.env.LLM_BASE_URL = "https://llm.test/v1"
   process.env.LLM_API_KEY = "test-key"
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init: { body: string }) => {
+    vi.fn(async (url: string, init: { body: string }) => {
+      urls.push(String(url))
       const body = JSON.parse(init.body) as { model: string; messages: Array<{ content: string }> }
       prompts.push(body.messages[1].content)
-      return fakeJudge(body.model, body.messages[1].content)
+      const res = fakeJudge(body.model, body.messages[1].content)
+      // Macaly's LLM endpoint answers { text } instead of OpenAI-style choices.
+      if (String(url).includes("/api/client-app/llm-usage") && res.ok) {
+        const j = (await res.json()) as { choices: Array<{ message: { content: string } }> }
+        return Response.json({ success: true, text: j.choices[0].message.content })
+      }
+      return res
     }),
   )
   vi.useFakeTimers()
 }
 
+export function useMacalyTransport() {
+  process.env.MACALY_API_TOKEN = "test-token"
+  process.env.MACALY_BASE_URL = "https://macaly.test"
+  process.env.MACALY_CHAT_ID = "test-chat"
+}
+
 export function uninstallFakeJudges() {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  for (const k of MACALY_VARS) {
+    if (savedMacaly[k] === undefined) delete process.env[k]
+    else process.env[k] = savedMacaly[k]
+  }
 }
 
 export async function seedUser(t: T, email: string, verified = true) {

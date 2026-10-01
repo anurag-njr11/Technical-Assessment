@@ -3,7 +3,7 @@ import { api } from "../../convex/_generated/api"
 import { DEFAULT_PANEL, redact, validatePanel } from "../../convex/judges"
 import { resultValidator } from "../../convex/schema"
 import type { C } from "./helpers"
-import { installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges } from "./helpers"
+import { installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges, urls, useMacalyTransport } from "./helpers"
 
 beforeEach(installFakeJudges)
 afterEach(uninstallFakeJudges)
@@ -99,6 +99,22 @@ describe("grading pipeline", () => {
     expect(result.modelsUsed).toEqual(["anthropic/claude-sonnet-5", "google/gemini-3.6-flash", "meta-llama/llama-3.3-70b-instruct"])
     expect(result.callCount).toBeGreaterThan(0)
     expect(result.commentClasses).toHaveLength(3)
+  })
+})
+
+describe("LLM transport (two deployment versions)", () => {
+  it("bills judge calls to Macaly when MACALY_API_TOKEN is set (Macaly-hosted version)", async () => {
+    useMacalyTransport()
+    const { result } = await submitAndGrade(makeT(), PRIYA)
+    expect(urls.length).toBeGreaterThan(0)
+    expect(urls.every((u) => u === "https://macaly.test/api/client-app/llm-usage")).toBe(true)
+    expect(outcome(result, "I1")).toBe("found")
+  })
+
+  it("calls the OpenAI-compatible endpoint otherwise (local OpenRouter version)", async () => {
+    const { result } = await submitAndGrade(makeT(), PRIYA)
+    expect(urls.every((u) => u === "https://llm.test/v1/chat/completions")).toBe(true)
+    expect(outcome(result, "I1")).toBe("found")
   })
 })
 
