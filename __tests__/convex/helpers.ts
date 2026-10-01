@@ -52,6 +52,15 @@ function fakeJudge(model: string, prompt: string) {
       proposes_fix: hit && /should|use |fix/.test(lc),
       evidence: hit ? (mode === "fabricate" ? "a quote the candidate never wrote" : kw) : "",
     }
+  } else if (prompt.includes("<candidate_answer>")) {
+    // Follow-up checklist: answers the question, is specific only if it names code, and is always actionable.
+    const ans = between(prompt, "<candidate_answer", "</candidate_answer>")
+    answer = {
+      addresses_question: true,
+      specific: /\w+\.\w+|\(\)/.test(ans),
+      actionable: true,
+      evidence: ans.split(/\s+/).slice(0, 3).join(" "),
+    }
   } else if (prompt.includes("<transcript>")) {
     // Trajectory question: a fair judge credits good behaviour and denies bad, quoting the final review event.
     const last = between(prompt, "<transcript>", "</transcript>").split("\n").filter((l) => l.startsWith("[")).pop() ?? ""

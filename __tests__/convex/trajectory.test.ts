@@ -117,6 +117,7 @@ describe("M3 trajectory council", () => {
     expect(f(r, "A1")).toMatchObject({ kind: "detected", dimension: "challengeAssumptions", agreement: "3/3" })
     expect(f(r, "A2")).toMatchObject({ kind: "false_positive", agreement: "0/3" })
     expect(r.trajectory!.findings.some((x) => x.id === "B6")).toBe(false) // build-only question
+    expect(r.trajectory!.findings.some((x) => x.id === "B5")).toBe(false) // nothing to run in a code review
     const dim = (k: string) => r.trajectory!.dimensions.find((d) => d.key === k)!
     expect(dim("challengeAssumptions").score).toBe(100)
     expect(dim("efficiency").detail).toMatch(/tokens in 900, out 100; 1 prompt\(s\); 1 outcome/)
@@ -149,5 +150,34 @@ describe("M3 trajectory council", () => {
     expect(o.items.find((i) => i.id === "I2")!.outcome).toBe("found")
     expect(o.overall).toBe(blendOverall(deterministicOnly, r.trajectory!.dimensions))
     expect(o.overall).not.toBe(deterministicOnly)
+  })
+})
+
+describe("trajectory council: readable, fair findings", () => {
+  it("keeps a vote whose quote is real but whose event_ids are missing, and still drops fabricated quotes", async () => {
+    // Judge C (index 2) quotes correctly but leaves event_ids empty, as Llama does in practice.
+    const r = await gradeTrajectory(
+      input,
+      fake((j, s) => (s === "trajectory:F3" ? (j === 2 ? { ...YES, event_ids: [] } : YES) : NO)),
+      DEFAULT_PANEL,
+    )
+    const f3 = f(r, "F3")
+    expect(f3).toMatchObject({ agreement: "3/3", confidence: "high" })
+    expect(f3.votes[2].eventIds).toEqual(["e3"])
+    const fabricated = await gradeTrajectory(
+      input,
+      fake((j, s) => (s === "trajectory:F3" ? (j === 2 ? { decision: true, evidence: "a quote nobody wrote", event_ids: [] } : YES) : NO)),
+      DEFAULT_PANEL,
+    )
+    expect(f(fabricated, "F3").votes[2]).toMatchObject({ valid: false })
+  })
+
+  it("phrases negative checks positively when the candidate did the right thing", async () => {
+    const r = await gradeTrajectory(input, fake(() => NO), DEFAULT_PANEL)
+    const b3 = f(r, "B3")
+    expect(b3).toMatchObject({ good: false, goodTitle: "Didn't blindly accept faulty output", agreement: "0/3" })
+    const trust = r.trajectory!.dimensions.find((d) => d.key === "trustCalibration")!
+    expect(trust.detail).toContain("Didn't blindly accept faulty output: 100%")
+    expect(trust.detail).not.toContain("Blindly accepted faulty output: 100%")
   })
 })
