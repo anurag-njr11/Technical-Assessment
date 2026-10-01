@@ -190,3 +190,20 @@ describe("SEC-15 rate limits", () => {
     }
   })
 })
+
+describe("legacy open-link client", () => {
+  it("the old MVP submit shape is accepted by the contract but always rejected", async () => {
+    const t = makeT()
+    await expect(
+      t.mutation(api.submissions.submit, {
+        candidateName: "Old Client",
+        scenarioId: "ord-482-junior",
+        level: "Junior",
+        verdict: "approve",
+        comments: [],
+        followUps: [],
+      }),
+    ).rejects.toThrow(/outdated/)
+    expect(await t.run(async (ctx) => ctx.db.query("submissions").collect())).toHaveLength(0)
+  })
+})

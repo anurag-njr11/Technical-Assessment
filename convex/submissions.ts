@@ -8,7 +8,7 @@ import {
 import type { MutationCtx } from "./_generated/server"
 import type { Doc, Id } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
-import { commentValidator, resultValidator, verdictValidator } from "./schema"
+import { commentValidator, followUpValidator, verdictValidator } from "./schema"
 import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
 import { requireOwner, requireRecruiter } from "./access"
 import { requireActive } from "./candidates"
@@ -94,15 +94,26 @@ export async function insertSubmission(
 // Public: authorised only by the single-use invite token. Returns nothing (SEC-12).
 export const submit = mutation({
   args: {
-    token: v.string(),
+    // Optional only so the argument shape stays compatible with the old
+    // open-link client (below); a call without a token is always rejected.
+    token: v.optional(v.string()),
     // Required for code and decision reviews; M3 builds have no verdict.
     verdict: v.optional(verdictValidator),
     comments: v.array(commentValidator),
-    answers: v.array(v.string()),
+    answers: v.optional(v.array(v.string())),
     code: v.optional(v.string()),
+    // Legacy MVP open-link arguments, accepted for contract compatibility only.
+    candidateName: v.optional(v.string()),
+    scenarioId: v.optional(v.string()),
+    level: v.optional(v.string()),
+    followUps: v.optional(v.array(followUpValidator)),
   },
   handler: async (ctx, args) => {
+    if (!args.token) {
+      throw new Error("This assessment link is outdated. Please use the personal invite link from the hiring team.")
+    }
     const candidate = await requireActive(ctx, args.token)
+    const answers = args.answers ?? []
     await hit(ctx, "submit:global", LIMITS.submitsPerHour())
     const meta = SCENARIO_META[candidate.scenarioId]
     if (meta.kind === "build") {
@@ -122,8 +133,8 @@ export const submit = mutation({
       return null
     }
     if (!args.verdict) throw new Error("Choose a verdict before submitting.")
-    if (args.answers.length !== meta.followUps.length) throw new Error("Answer every follow-up question.")
-    validateWork(args.comments, args.answers)
+    if (answers.length !== meta.followUps.length) throw new Error("Answer every follow-up question.")
+    validateWork(args.comments, answers)
     // FR-C-8: the review locked when the candidate moved to follow-ups.
     const draft = await ctx.db
       .query("autosaves")
@@ -133,7 +144,7 @@ export const submit = mutation({
     await insertSubmission(ctx, candidate, {
       verdict: locked && draft.verdict ? draft.verdict : args.verdict!,
       comments: locked ? draft.comments : args.comments,
-      answers: args.answers,
+      answers: answers,
       autoSubmitted: false,
       // PR-author chat on code reviews.
       build: draft?.events?.length ? { code: "", events: draft.events } : undefined,
@@ -264,7 +275,9 @@ export function effectiveResult(sub: Doc<"submissions">, machine: Result, overri
 }
 
 export const saveResult = internalMutation({
-  args: { id: v.id("submissions"), result: resultValidator },
+  // v.any() keeps the argument contract of the deployed MVP; the table schema
+  // still validates the stored result against resultValidator (NFR-DATA-1).
+  args: { id: v.id("submissions"), result: v.any() },
   handler: async (ctx, args) => {
     const sub = await ctx.db.get(args.id)
     if (!sub) return
@@ -272,8 +285,8 @@ export const saveResult = internalMutation({
     const overrides = await loadOverrides(ctx, args.id)
     await ctx.db.patch(args.id, {
       status: "graded",
-      machineResult: args.result,
-      result: effectiveResult(sub, args.result, overrides),
+      machineResult: args.result as Result,
+      result: effectiveResult(sub, args.result as Result, overrides),
       error: undefined,
     })
   },
