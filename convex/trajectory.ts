@@ -35,7 +35,14 @@ export const DIMENSIONS = {
 /** An assumption the AI agent stated in its PR rationale. `flawed` defaults to "maps to an answer-key issue". */
 export type Assumption = { id: string; text: string; flawed?: boolean; itemId?: string; why?: string }
 
-type Question = { id: string; dimension: DimKey; kind: Finding["kind"]; good: boolean; title: string; question: string; buildOnly?: boolean; chatOnly?: boolean; also?: DimKey[] }
+type Question = {
+  id: string; dimension: DimKey; kind: Finding["kind"]; good: boolean; title: string; question: string
+  /** How to phrase the finding when the candidate gave the good answer (needed when `good` is false). */
+  goodTitle?: string
+  /** Code-review wording, when the build wording doesn't fit a review. */
+  reviewQuestion?: string
+  buildOnly?: boolean; chatOnly?: boolean; also?: DimKey[]
+}
 
 // `good` is the answer that reflects well on the candidate.
 const BEHAVIOR: Question[] = [
@@ -43,15 +50,17 @@ const BEHAVIOR: Question[] = [
     question: "Did the candidate verify the AI's code or claims (read critically, test, or check against the code/API) before accepting them?" },
   { id: "B2", dimension: "trustCalibration", kind: "behavior", good: true, title: "Challenged the AI when it was wrong", chatOnly: true,
     question: "Did the candidate challenge or correct the assistant when its output was wrong?" },
-  { id: "B3", dimension: "trustCalibration", kind: "behavior", good: false, title: "Blindly accepted faulty output", also: ["verification"],
+  { id: "B3", dimension: "trustCalibration", kind: "behavior", good: false, title: "Blindly accepted faulty output", goodTitle: "Didn't blindly accept faulty output", also: ["verification"],
     question: "Did the candidate accept faulty assistant output or claims without checking them?" },
   { id: "B4", dimension: "promptQuality", kind: "behavior", good: true, title: "Gave specific instructions", chatOnly: true,
-    question: "Did the candidate give the assistant specific, well-scoped prompts (requirements, constraints, edge cases, context)?" },
-  { id: "B5", dimension: "verification", kind: "behavior", good: true, title: "Tested or validated behaviour",
+    question: "Did the candidate give the assistant specific, well-scoped prompts (requirements, constraints, edge cases, context)?",
+    reviewQuestion: "Were the candidate's questions to the agent specific and well-scoped (pointing at concrete code, lines, APIs or claims) rather than vague?" },
+  // Code reviews have nothing to run, so this is only asked of builds.
+  { id: "B5", dimension: "verification", kind: "behavior", good: true, title: "Tested or validated behaviour", buildOnly: true,
     question: "Did the candidate run tests, write tests, or otherwise check how the code behaves to validate it?" },
   { id: "B6", dimension: "engineeringJudgment", kind: "behavior", good: true, title: "Took over manually when appropriate", buildOnly: true,
     question: "Did the candidate take over and edit the code by hand when the assistant was not getting it right?" },
-  { id: "B7", dimension: "engineeringJudgment", kind: "false_positive", good: false, title: "Flagged a non-issue as a bug",
+  { id: "B7", dimension: "engineeringJudgment", kind: "false_positive", good: false, title: "Flagged a non-issue as a bug", goodTitle: "Didn't flag non-issues as bugs",
     question: "Did the candidate treat correct code or a non-issue as a bug (e.g. ask the assistant to 'fix' something that was already right)?" },
   { id: "B8", dimension: "engineeringJudgment", kind: "behavior", good: true, title: "Recognized security/performance/design problems",
     question: "Did the candidate recognize security, performance or design problems in the code?" },
@@ -171,6 +180,11 @@ export async function gradeTrajectory(input: TrajectoryInput, ask: Asker, panel:
         eventIds: Array.isArray(j.event_ids) ? j.event_ids.map(String) : [],
         valid: true,
       }
+      // Some models quote correctly but leave event_ids empty: locate the quote
+      // in the transcript instead of discarding an otherwise valid vote.
+      if (!vote.eventIds.length && vote.evidence) {
+        vote.eventIds = [...lines].filter(([, text]) => evidenceIsReal(vote.evidence, text)).map(([id]) => id).slice(0, 3)
+      }
       const cited = vote.eventIds.map((e) => lines.get(e))
       if (cited.some((t) => t === undefined)) return bad("cites an event id that is not in the transcript", vote)
       if ((vote.decision || vote.evidence) && !evidenceIsReal(vote.evidence, cited.join("\n"))) {
@@ -191,12 +205,14 @@ export async function gradeTrajectory(input: TrajectoryInput, ask: Asker, panel:
     a.flawed
       ? { id: a.id, dimension: "challengeAssumptions", kind: "missed", good: true, title: `Challenged: ${a.text}`,
           question: `The AI agent assumed: "${a.text}". This assumption is wrong. Did the candidate challenge it with a correct technical reason?` }
-      : { id: a.id, dimension: "challengeAssumptions", kind: "false_positive", good: false, title: `Rejected a sound assumption: ${a.text}`, also: ["trustCalibration"],
+      : { id: a.id, dimension: "challengeAssumptions", kind: "false_positive", good: false, title: `Rejected a sound assumption: ${a.text}`,
+          goodTitle: `Kept a sound assumption: ${a.text}`, also: ["trustCalibration"],
           question: `The AI agent assumed: "${a.text}". This assumption is correct. Did the candidate reject or challenge it without a valid technical basis?` },
   )
   // No prompts = nothing to rate on chat behaviour; not using the chat is never penalized by itself.
   const chatted = input.events.some((e) => e.type === "ai_prompt")
-  const questions = [...faultQs, ...assumptionQs, ...BEHAVIOR.filter((b) => (isBuild || !b.buildOnly) && (chatted || !b.chatOnly))]
+  const questions = [...faultQs, ...assumptionQs, ...BEHAVIOR.filter((b) => (isBuild || !b.buildOnly) && (chatted || !b.chatOnly)).map((b) => ({ ...b }))]
+  for (const q of questions) if (!isBuild && q.reviewQuestion) q.question = q.reviewQuestion
   const votes = await Promise.all(questions.map((q) => council(q.id, q.question)))
   const judged = modelsUsed.size > 0
 
@@ -208,6 +224,7 @@ export async function gradeTrajectory(input: TrajectoryInput, ask: Asker, panel:
     id: q.id, title: q.title, dimension: q.dimension,
     kind: q.dimension === "challengeAssumptions" && q.good ? (c.decision ? "detected" : "missed") : q.kind,
     question: q.question, votes, agreement: c.agreement, confidence: c.confidence, needsReview: c.needsReview,
+    good: q.good, ...(q.goodTitle ? { goodTitle: q.goodTitle } : {}),
   }))
 
   /*
@@ -246,7 +263,9 @@ export async function gradeTrajectory(input: TrajectoryInput, ask: Asker, panel:
   }
   for (const { q, c } of results) {
     if (c.decision === null) continue
-    for (const dim of [q.dimension, ...(q.also ?? [])]) S[dim].push([q.title, c.decision === q.good ? 1 : 0])
+    // Label each signal so "100%" always means "did the good thing".
+    const label = q.good ? q.title : (q.goodTitle ?? `Avoided: ${q.title}`)
+    for (const dim of [q.dimension, ...(q.also ?? [])]) S[dim].push([label, c.decision === q.good ? 1 : 0])
   }
   const raw: Partial<Record<DimKey, string>> = {
     efficiency: `tokens in ${tokensIn}, out ${tokensOut}; ${prompts.length} prompt(s); ${outcomes} outcome(s) (${base.foundCount} issues found + ${challenged} correct challenges)`,

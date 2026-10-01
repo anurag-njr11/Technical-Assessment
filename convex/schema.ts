@@ -173,6 +173,10 @@ export const trajectoryValidator = v.object({
       agreement: v.string(), // e.g. "3/3"
       confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
       needsReview: v.boolean(),
+      // The answer that reflects well on the candidate, and how to phrase the
+      // finding when they got it right (e.g. "Didn't blindly accept faulty output").
+      good: v.optional(v.boolean()),
+      goodTitle: v.optional(v.string()),
     }),
   ),
 })
@@ -220,7 +224,15 @@ export const resultValidator = v.object({
     v.object({
       value: v.number(),
       detail: v.string(),
-      answers: v.array(v.object({ question: v.string(), score: v.number(), votes: v.number() })),
+      answers: v.array(
+        v.object({
+          question: v.string(),
+          score: v.number(),
+          votes: v.number(),
+          // Per-check council result, so recruiters can see why an answer lost points.
+          checks: v.optional(v.array(v.object({ label: v.string(), passed: v.boolean(), yes: v.number() }))),
+        }),
+      ),
     }),
   ),
   communication: v.optional(v.object({ value: v.number(), detail: v.string() })),

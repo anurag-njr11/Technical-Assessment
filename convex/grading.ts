@@ -420,8 +420,9 @@ export async function gradeSubmission(
             return !any || evidenceIsReal(typeof j.evidence === "string" ? j.evidence : "", text)
           })
         const maj = (k: string) => valid.length >= 2 && valid.filter((j) => j[k] === true).length > valid.length / 2
-        const score = ["addresses_question", "specific", "actionable"].filter(maj).length
-        return { question: f.question, score, votes: valid.length }
+        const CHECKS: Array<[string, string]> = [["addresses_question", "Answers the question"], ["specific", "Specific to this code"], ["actionable", "Actionable"]]
+        const checks = CHECKS.map(([k, label]) => ({ label, passed: maj(k), yes: valid.filter((j) => j[k] === true).length }))
+        return { question: f.question, score: checks.filter((c) => c.passed).length, votes: valid.length, checks }
       }),
     )
     const value = scored.reduce((s2, x) => s2 + x.score, 0) / (3 * scored.length)

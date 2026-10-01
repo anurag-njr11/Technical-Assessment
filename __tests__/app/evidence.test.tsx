@@ -11,6 +11,8 @@ const findings: Finding[] = [
   { id: "I1", title: "SQL injection", dimension: "issueDetection", kind: "detected", question: "Did they catch it?", votes: [vote("A", true, ["e1"]), vote("B", true), vote("C", true)], agreement: "3/3", confidence: "high", needsReview: false },
   { id: "I2", title: "Off-by-one", dimension: "issueDetection", kind: "missed", question: "Did they catch the offset?", votes: [vote("A", true), vote("B", false), vote("C", false)], agreement: "2/3", confidence: "low", needsReview: true },
   { id: "A1", title: "Challenged parse_date_safe", dimension: "challengeAssumptions", kind: "detected", question: "?", votes: [vote("A", true)], agreement: "1/1", confidence: "medium", needsReview: false },
+  { id: "B3", title: "Blindly accepted faulty output", goodTitle: "Didn't blindly accept faulty output", good: false, dimension: "trustCalibration", kind: "behavior", question: "?", votes: [vote("A", false), vote("B", false), vote("C", false)], agreement: "0/3", confidence: "high", needsReview: false },
+  { id: "A7", title: "Rejected a sound assumption: idempotent replay", goodTitle: "Kept a sound assumption: idempotent replay", good: false, dimension: "challengeAssumptions", kind: "false_positive", question: "?", votes: [vote("A", false), vote("B", false), vote("C", false)], agreement: "0/3", confidence: "high", needsReview: false },
 ]
 
 describe("evidence-first report", () => {
@@ -31,8 +33,15 @@ describe("evidence-first report", () => {
     )
     expect(screen.getByText("found 1 of 2")).toBeInTheDocument()
     expect(screen.getByText("Judge disagreements")).toBeInTheDocument()
-    expect(screen.getByText("Detected issues")).toBeInTheDocument()
-    expect(screen.getByText("Missed issues")).toBeInTheDocument()
+    expect(screen.getByText("Caught")).toBeInTheDocument()
+    expect(screen.getByText("Concerns")).toBeInTheDocument()
+    expect(screen.getByText("Needs a human look")).toBeInTheDocument() // A1 has only one usable vote
+    // Clean negative checks read as good behaviour, never as mistakes.
+    expect(screen.getByText("Good behaviour")).toBeInTheDocument()
+    expect(screen.getByText("Didn't blindly accept faulty output")).toBeInTheDocument()
+    expect(screen.getByText("Kept a sound assumption: idempotent replay")).toBeInTheDocument()
+    expect(screen.queryByText("Blindly accepted faulty output")).toBeNull()
+    expect(screen.queryByText(/False positives/)).toBeNull()
     expect(screen.getByText("Human review recommended")).toBeInTheDocument()
     expect(screen.getByText(/Planted fault F1/)).toBeInTheDocument()
     expect(screen.getByText("15 tokens")).toBeInTheDocument()
