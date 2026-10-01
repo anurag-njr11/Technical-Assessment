@@ -3,6 +3,17 @@ import { Page, PageHeader } from '@/components/rb'
 import { WEIGHTS } from '@/convex/scoring'
 import { MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import siteMetadata from '@/metadata.json'
+import {
+  AnswerKeyDiagram,
+  ChecklistDiagram,
+  ConsensusDiagram,
+  CouncilDiagram,
+  EvidenceDiagram,
+  HumanDiagram,
+  MatchingDiagram,
+  OverviewFlow,
+  ScoreDiagram,
+} from '@/components/grading-diagrams'
 
 const meta = siteMetadata['/methodology']
 
@@ -21,7 +32,8 @@ const COMPONENTS: Array<[keyof typeof WEIGHTS, string, string]> = [
 
 const SECTIONS = [
   ['modules', 'Modules'],
-  ['pipeline', 'The grading pipeline'],
+  ['pipeline', 'How grading works'],
+  ['steps', 'Step by step'],
   ['weights', 'Score weights'],
   ['checks', 'How we check the checker'],
   ['rights', 'Candidate rights'],
@@ -32,13 +44,47 @@ function H({ id, children }: { id: (typeof SECTIONS)[number][0]; children: React
   return <h2 id={id} className="mt-12 scroll-mt-24 text-xl font-semibold tracking-tight first:mt-0">{children}</h2>
 }
 
-const PIPELINE: Array<[string, string]> = [
-  ['Location matching.', 'A comment is compared with planted items within 3 lines of it.'],
-  ['A council of three judges', "from different model families answers checklist questions independently at temperature 0. If a judge's model fails, it falls back to a model from a family not already on the panel."],
-  ['Evidence verification.', 'Every "yes" must quote the candidate\'s own words; code checks the quote really appears, and discards the vote if not.'],
-  ['Anonymization.', 'Judges never see names or email addresses, even if typed into a comment.'],
-  ['Consensus and escalation.', 'A majority of valid votes decides. Split votes or too few valid votes on serious items go to a person.'],
-  ['Deterministic scoring', 'with the published weights below. Human reviewers can override an item with a written justification; every override is logged.'],
+const STEPS: Array<{ title: string; body: React.ReactNode; diagram: React.ReactNode }> = [
+  {
+    title: 'Every scenario has a fixed answer key',
+    body: 'An AI wrote the code (or plan) the candidate reviews, and we planted specific problems in it on purpose. We also added decoys: code that looks wrong but is actually fine. Every candidate on the same version sees exactly the same problems, so scores are comparable.',
+    diagram: <AnswerKeyDiagram />,
+  },
+  {
+    title: 'Comments are matched to the answer key by location',
+    body: 'Ordinary code pairs each review comment with any planted item within 3 lines of it. This narrows each question down to “does this comment describe that problem?”',
+    diagram: <MatchingDiagram />,
+  },
+  {
+    title: 'Three independent AI judges look at each match',
+    body: 'Instead of trusting one AI, a council of three from different companies looks at the same comment separately. Their mistakes are less likely to line up.',
+    diagram: <CouncilDiagram />,
+  },
+  {
+    title: 'Judges only answer yes/no questions',
+    body: 'Each judge gets the same short checklist. A question counts as “yes” when most usable votes say yes.',
+    diagram: <ChecklistDiagram />,
+  },
+  {
+    title: 'Every “yes” must be backed by the candidate’s own words',
+    body: 'A judge that says “yes, they found it” has to copy the exact phrase from the candidate’s comment that proves it. Code then checks the phrase is really there.',
+    diagram: <EvidenceDiagram />,
+  },
+  {
+    title: 'Majority decides — and unclear cases go to a person',
+    body: 'When the judges agree, the result stands. When they split on a serious problem, or too few votes survived the proof check, the system flags it for a human instead of guessing.',
+    diagram: <ConsensusDiagram />,
+  },
+  {
+    title: 'Code calculates the score with a published formula',
+    body: 'The AI never picks a number. Code adds up five parts with fixed weights, then places the total in a band.',
+    diagram: <ScoreDiagram />,
+  },
+  {
+    title: 'People stay in charge',
+    body: 'ReviewBench informs hiring decisions; it never makes them.',
+    diagram: <HumanDiagram />,
+  },
 ]
 
 // TR-2 published weights, TR-6 technical manual (summary), CO-1..CO-5 notices.
@@ -70,7 +116,7 @@ function Methodology() {
           </div>
         </nav>
 
-      <article className="max-w-3xl text-[15px] leading-relaxed">
+      <article className="min-w-0 max-w-3xl text-[15px] leading-relaxed">
         <H id="modules">Modules</H>
         <ul className="rb-stagger mt-4 grid gap-3 sm:grid-cols-2">
           {Object.values(SCENARIOS).map((s) => (
@@ -82,17 +128,37 @@ function Methodology() {
           ))}
         </ul>
 
-        <H id="pipeline">The grading pipeline</H>
-        <ol className="mt-4 space-y-3">
-          {PIPELINE.map(([title, body], i) => (
-            <li key={title} className="flex gap-4 rounded-xl border border-border bg-card p-4">
-              <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-accent font-mono text-xs font-semibold text-accent-foreground">{i + 1}</span>
-              <p className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{title}</span> {body}</p>
+        <H id="pipeline">How grading works</H>
+        <p className="mt-3 text-muted-foreground">
+          In one sentence: <span className="font-medium text-foreground">AI judges answer simple yes/no questions and must prove each answer
+          with a quote; ordinary code checks the proof, counts the votes and does the maths.</span> Anything unclear goes to a person.
+        </p>
+        <OverviewFlow />
+
+        <H id="steps">Step by step</H>
+        <ol className="mt-2">
+          {STEPS.map((s, i) => (
+            <li key={s.title} className="relative border-l border-border pb-10 pl-8 last:border-transparent last:pb-0">
+              <span className="absolute -left-4 top-6 grid size-8 place-items-center rounded-full border border-primary/40 bg-accent font-mono text-sm font-semibold text-accent-foreground">
+                {i + 1}
+              </span>
+              <h3 className="pt-7 text-base font-semibold tracking-tight">{s.title}</h3>
+              <p className="mt-1.5 text-sm text-muted-foreground">{s.body}</p>
+              {s.diagram}
             </li>
           ))}
         </ol>
+        <div className="mt-8 rounded-xl border border-border bg-card p-5 text-sm">
+          <p className="font-semibold">Directed Build adds one more thing: how you worked with the AI</p>
+          <p className="mt-1 text-muted-foreground">
+            In the build module the same council also reads the candidate’s chat with the assistant and their test runs — did they check the
+            AI’s output, push back when it was wrong, give clear instructions? The final score is half the outcome (above) and half these
+            working-style dimensions, each backed by cited moments from the session.
+          </p>
+        </div>
 
         <H id="weights">Score weights (Code and Decision Review)</H>
+        <p className="mt-3 text-sm text-muted-foreground">The full table behind step 7.</p>
         <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
         <table className="w-full text-sm">
           <tbody>
