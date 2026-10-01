@@ -151,5 +151,5 @@ Optional Convex environment variables:
 AI-native flow (P7): assessments with link/QR, AI PR review with a live agent,
 live Directed Build assistant, trajectory council, evidence-first recruiter
 views and candidate comparison. Plus P1–P6 at demo depth. Not yet clicked
-through in a browser or run against real models. See `ReviewBench — Progress Report.md` for what is done, what still
+through in a browser or run against real models. See `PROGRESS_REPORT.md` for what is done, what still
 needs real data or owner action, and the roadmap.
