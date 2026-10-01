@@ -14,6 +14,25 @@ export const ResendOTP = Email({
     return generateOTP(6);
   },
   async sendVerificationRequest({ identifier: email, token }) {
+    // Macaly hosting: Macaly's OTP endpoint sends the email.
+    if (process.env.OTP_ENDPOINT) {
+      const response = await fetch(process.env.OTP_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          token,
+          chatId: process.env.CHAT_ID,
+          appName: process.env.APP_NAME || "ReviewBench",
+          secretKey: process.env.SECRET_KEY,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to send verification email");
+      }
+      return
+    }
     // Local dev without an email provider: the code goes to the Convex logs.
     if (!process.env.RESEND_API_KEY) {
       console.log(`[dev] verification code for ${email}: ${token}`)

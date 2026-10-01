@@ -11,6 +11,23 @@ three AI judges from different model families answers narrow yes/no questions
 about it, every vote must cite real events and quotes, and deterministic code
 computes the score. The recruiter gets an evidence-first report.
 
+## Two versions
+
+| | `macaly` branch (this one) | `remove-macaly-dependency` branch |
+|---|---|---|
+| Hosting | Macaly Cloud | Your machine (or any Node host) + Convex |
+| AI judges and assistant | Macaly credits (`MACALY_API_TOKEN`, `MACALY_BASE_URL`, `MACALY_CHAT_ID`) | OpenRouter (`LLM_API_KEY`), or any OpenAI-compatible endpoint via `LLM_BASE_URL` |
+| Sign-in emails | Macaly OTP endpoint (`OTP_ENDPOINT`, `CHAT_ID`, `APP_NAME`, `SECRET_KEY`) | Resend (`RESEND_API_KEY`), or the code is printed in the Convex logs |
+| Macaly visual editor | `@macaly/bridge` + `macalyTagger` | Not included |
+
+The application code is the same on both branches; this branch only adds the
+Macaly glue (`vite.config.ts`, `src/routes/__root.tsx`, the two `@macaly/*`
+packages and the Macaly email path in `convex/ResendOTP.ts`). The backend picks
+the provider at runtime: Macaly when `MACALY_API_TOKEN` / `OTP_ENDPOINT` are
+set, otherwise OpenRouter / Resend. To bring new features across, merge
+`remove-macaly-dependency` into `macaly` (conflicts, if any, are limited to the
+files above).
+
 ## Quick start
 
 Needs Node 22+ (CI uses 22) and npm.
