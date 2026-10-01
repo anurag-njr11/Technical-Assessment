@@ -120,6 +120,9 @@ export async function callModel(
     body: JSON.stringify({
       model: ref.model,
       temperature: 0,
+      // Without a cap OpenRouter reserves each model's full output allowance up
+      // front and answers 402 on low balances; judges reply with short JSON.
+      max_tokens: 2000,
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
