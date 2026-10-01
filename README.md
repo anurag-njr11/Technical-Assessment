@@ -16,7 +16,7 @@ computes the score. The recruiter gets an evidence-first report.
 | | `macaly` branch (this one) | `remove-macaly-dependency` branch |
 |---|---|---|
 | Hosting | Macaly Cloud | Your machine (or any Node host) + Convex |
-| AI judges and assistant | Macaly credits (`MACALY_API_TOKEN`, `MACALY_BASE_URL`, `MACALY_CHAT_ID`) | OpenRouter (`LLM_API_KEY`), or any OpenAI-compatible endpoint via `LLM_BASE_URL` |
+| AI judges and assistant | Macaly credits (`MACALY_API_TOKEN`, `MACALY_BASE_URL`, `MACALY_CHAT_ID`); setting `LLM_API_KEY` switches to OpenRouter | OpenRouter (`LLM_API_KEY`), or any OpenAI-compatible endpoint via `LLM_BASE_URL` |
 | Sign-in emails | Macaly OTP endpoint (`OTP_ENDPOINT`, `CHAT_ID`, `APP_NAME`, `SECRET_KEY`) | Resend (`RESEND_API_KEY`), or the code is printed in the Convex logs |
 | Macaly visual editor | `@macaly/bridge` + `macalyTagger` | Not included |
 
@@ -24,7 +24,9 @@ The application code is the same on both branches; this branch only adds the
 Macaly glue (`vite.config.ts`, `src/routes/__root.tsx`, the two `@macaly/*`
 packages and the Macaly email path in `convex/ResendOTP.ts`). The backend picks
 the provider at runtime: Macaly when `MACALY_API_TOKEN` / `OTP_ENDPOINT` are
-set, otherwise OpenRouter / Resend. To bring new features across, merge
+set, otherwise OpenRouter / Resend. `LLM_API_KEY` always wins over
+`MACALY_API_TOKEN`, so when Macaly credits run out, `npx convex env set
+LLM_API_KEY sk-or-...` moves the judges and assistant to OpenRouter. To bring new features across, merge
 `remove-macaly-dependency` into `macaly` (conflicts, if any, are limited to the
 files above).
 

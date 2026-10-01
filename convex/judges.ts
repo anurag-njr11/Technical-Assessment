@@ -94,8 +94,9 @@ export async function callModel(
   /** Filled with the provider's reported token usage, when given. */
   usage?: { input: number; output: number },
 ): Promise<string> {
-  // On Macaly (MACALY_API_TOKEN set) calls are billed to Macaly credits.
-  if (process.env.MACALY_API_TOKEN) {
+  // On Macaly (MACALY_API_TOKEN set) calls are billed to Macaly credits, unless
+  // LLM_API_KEY is set: an OpenRouter key always wins, e.g. once credits run out.
+  if (process.env.MACALY_API_TOKEN && !process.env.LLM_API_KEY) {
     const res = await callMacalyJson("/api/client-app/llm-usage", {
       model: ref.model,
       temperature: 0,

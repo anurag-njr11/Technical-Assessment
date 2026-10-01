@@ -135,6 +135,14 @@ describe("LLM transport (two deployment versions)", () => {
     expect(outcome(result, "I1")).toBe("found")
   })
 
+  it("prefers LLM_API_KEY over Macaly when both are set (Macaly credits used up)", async () => {
+    useMacalyTransport()
+    process.env.LLM_API_KEY = "test-key"
+    const { result } = await submitAndGrade(makeT(), PRIYA)
+    expect(urls.every((u) => u === "https://llm.test/v1/chat/completions")).toBe(true)
+    expect(outcome(result, "I1")).toBe("found")
+  })
+
   it("calls the OpenAI-compatible endpoint otherwise (local OpenRouter version)", async () => {
     const { result } = await submitAndGrade(makeT(), PRIYA)
     expect(urls.every((u) => u === "https://llm.test/v1/chat/completions")).toBe(true)

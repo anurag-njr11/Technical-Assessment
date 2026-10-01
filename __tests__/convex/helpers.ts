@@ -118,6 +118,7 @@ export function installFakeJudges() {
 }
 
 export function useMacalyTransport() {
+  delete process.env.LLM_API_KEY
   process.env.MACALY_API_TOKEN = "test-token"
   process.env.MACALY_BASE_URL = "https://macaly.test"
   process.env.MACALY_CHAT_ID = "test-chat"
