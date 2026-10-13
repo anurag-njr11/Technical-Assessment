@@ -47,7 +47,7 @@ Then, in the browser:
 | 6 | AI key set, for the live assistant, the PR agent and the judges | `npx convex env set LLM_API_KEY ...` (OpenRouter by default) |
 | 7 | Every model ID is served by your endpoint: the 6 judge models and `ASSISTANT_MODEL` | Compare `convex/judges.ts` `DEFAULT_PANEL` with your provider's model list; override with `JUDGE_PANEL_JSON` / `ASSISTANT_MODEL` |
 | 8 | Emails (optional) | `RESEND_API_KEY` + `EMAIL_FROM` on a Resend-verified domain; otherwise read codes from `npx convex logs` |
-| 9 | Tests, typecheck and build pass | `npm test` (100 tests), `npx tsc --noEmit -p .`, `npx tsc --noEmit -p convex`, `npm run build` |
+| 9 | Tests, typecheck and build pass | `npm test` (120+ tests), `npx tsc --noEmit -p .`, `npx tsc --noEmit -p convex`, `npm run build` |
 | 10 | `npx convex dev` shows no TypeScript errors | It typechecks `convex/` on every push; a failure means functions were not deployed |
 
 **Without `LLM_API_KEY`** the site still works end to end: the assistant and PR
@@ -55,9 +55,9 @@ agent use scripted replies, and grading falls back to deterministic scoring
 with every submission flagged "AI judges were unavailable" for human review.
 Use this for a UI walkthrough, not for a real demo of the judges.
 
-**Known limitation:** the assessment's *AI-assisted* flag and *level* are
-labels only. The agent chat appears on every code-review and build task
-regardless (see `LATER.md` §P7).
+**Known limitation:** the assessment's *level* is a label only (it does not
+pick scenario content). *AI-assisted* is enforced: off hides the agent chat
+and the server refuses agent requests; Build with AI modules require it.
 
 **Cost and limits:** each PR review with chat triggers dozens of judge calls
 plus one assistant call per candidate prompt. Global caps:
@@ -108,9 +108,12 @@ No platform lock-in; both services are optional for local use.
 - **AI judges** (`convex/judges.ts`, `callModel`): any OpenAI-compatible chat
   endpoint. Default is OpenRouter, which serves every model on the default
   panel with one key. Without a key, grading still completes but every judge is
-  "unavailable" and submissions escalate to human review.
-- **Verification emails** (`convex/ResendOTP.ts`): Resend. Without a key, the
-  6-digit code is printed to the Convex logs (`npx convex logs`).
+  "unavailable" and submissions escalate to human review. If the provider
+  reports exhausted credits (402), grading pauses and the dashboard offers
+  "Retry all" instead of escalating everything.
+- **Emails** (`convex/email.ts`): Resend, for verification codes and for
+  candidate/assessment links. Without a key, emails are printed to the Convex
+  logs (`npx convex logs`).
 
 Convex environment variables (`npx convex env set NAME value`):
 | Variable | Default | Purpose |
@@ -129,10 +132,25 @@ Optional Convex environment variables:
 | `STARTS_PER_HOUR` | 300 | Global cap on assessment starts |
 | `JUDGE_PANEL_JSON` | built-in panel | Replace judge models; all 6 families must be distinct |
 | `RAG_EXAMPLES` | off | `on` adds up to 2 similar human-graded examples to each issue prompt |
+| `REWRITE_MODEL` | `ASSISTANT_MODEL` | Model that rewrites comments for the non-native-English perturbation test |
+| `SHADOW_PANEL_JSON` | unset | Candidate judge panel: also grades every live submission (EX-3) without changing it; compared on /reliability |
+| `RETENTION_DAYS` | unset (keep) | Daily job deletes submissions and unsubmitted invites older than this (SEC-17) |
+| `WEBHOOK_URL` | unset | POST `submission.graded` JSON for ATS integrations |
+| `WEBHOOK_SECRET` | unset | Signs webhook bodies: `X-ReviewBench-Signature: sha256=<HMAC>` |
+| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | unset | Adds "Continue with Google" for recruiters (SEC-4); callback `<CONVEX_SITE_URL>/api/auth/callback/google` |
+| `AUTH_GOOGLE_HD` | unset | Restrict Google sign-in to one Workspace domain |
+
+CI: pushes to `main` also run the golden-set regression gate against a
+staging deployment when the `CONVEX_DEPLOY_KEY_STAGING` secret is set
+(`scripts/ci-gate.mjs`). After upgrading an existing deployment, run
+`npx convex run reliability:backfillMetricRows` once so older results appear
+on the Reliability page.
 
 ## Status
 AI-native flow (P7): assessments with link/QR, AI PR review with a live agent,
 live Directed Build assistant, trajectory council, evidence-first recruiter
-views and candidate comparison. Plus P1–P6 at demo depth. Not yet clicked
-through in a browser or run against real models. See `ReviewBench — Progress Report.md` for what is done, what still
-needs real data or owner action, and the roadmap.
+views and candidate comparison. Plus P1–P6 at demo depth. Runs without
+Macaly. Clicked through locally (create assessment → join → Decision Review
+with agent chat → auto-submit → report); a full run against real models is
+still pending (the local key was near its spending limit). See
+`ReviewBench — Progress Report.md` and `LATER.md` for what remains.

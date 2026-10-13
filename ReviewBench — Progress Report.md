@@ -2,6 +2,15 @@
 
 Sep 30, 2026 · @Ace · updated after the P7 AI-native flow build
 
+## Update · Oct 13, 2026 (branch `remove-macaly-dependency`)
+
+- **Macaly fully removed.** The leftover `convex/macaly.ts` path is gone; AI calls go only to the OpenAI-compatible endpoint (`LLM_BASE_URL`, default OpenRouter), and email goes through Resend.
+- **P7 backlog closed in code:** *AI-assisted* is enforced (off = no agent chat, refused server-side); Decision Review (ADR-031) has agent notes and the agent chat; replies stream as they arrive; each reply records its model (optional per-scenario pin); trajectory findings and Directed Build items can be overridden by humans (dimensions and overall re-scored); assessment links can be emailed; joined links expire after 7 days; a second join with the same email gets the link by email; assessment list filters; CSV export of the candidates table and the comparison.
+- **Platform:** budget guard (exhausted credits pause grading with a "Retry all" banner), judge-reply cache and automatic grading retries, data retention (`RETENTION_DAYS`), signed ATS webhook, Google Workspace SSO, shadow-mode grading of a candidate panel, CI regression gate against staging, 2PL IRT, non-native-English perturbation, Reliability page over 2,000 submissions.
+- **Found by clicking through locally:** model calls had no `max_tokens`, so OpenRouter returned 402 on low-balance keys (fixed: capped at 800); candidates saw raw "[CONVEX …] Server Error" text (fixed: one shared error cleaner); grading now retries when every judge call fails before falling back.
+- **Verified:** 120/120 tests, both typechecks clean; local click-through of recruiter → candidate (Decision Review with agent chat) → auto-submit → report. **Not verified:** a graded run with real models (the local key is near its OpenRouter limit).
+- **Still open (needs decisions, content, data or infrastructure):** multi-tenant workspaces, scenario variants/builder/BYO code, sandboxed code execution (Judge0/Docker), more decision briefs, level-driven content, calibration on human-graded data, embedding retrieval, SAML, Playwright E2E. See `LATER.md`.
+
 ## Summary
 
 **New in P7 (AI-native flow):** ReviewBench now tells one story: *it doesn't ask whether you can write code without AI; it evaluates whether you can effectively work with AI to produce reliable engineering work.*
