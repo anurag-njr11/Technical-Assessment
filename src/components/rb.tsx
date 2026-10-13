@@ -212,6 +212,14 @@ export function RecruiterNav() {
   )
 }
 
+/**
+ * The user-facing part of a Convex error. Server messages arrive as
+ * "[CONVEX M(fn)] [Request ID: …] Server Error\nUncaught Error: <message>\n    at …",
+ * so the message is the text after "Uncaught Error: ", wherever it is.
+ */
 export function cleanError(err: unknown, fallback = 'Something went wrong.') {
-  return err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : fallback
+  if (!(err instanceof Error)) return fallback
+  const m = err.message.match(/Uncaught Error: (.+)/)
+  if (m) return m[1].trim()
+  return /\[CONVEX|Server Error/.test(err.message) ? fallback : err.message.split('\n')[0]
 }

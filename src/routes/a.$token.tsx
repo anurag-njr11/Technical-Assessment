@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ArrowRight, Bot, Clock, Loader2, Lock, ShieldCheck } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { Page, PageSpinner, btn } from '@/components/rb'
+import { Page, PageSpinner, btn, cleanError } from '@/components/rb'
 
 // Landing page for a recruiter's shareable assessment link / QR code.
 export const Route = createFileRoute('/a/$token')({
@@ -49,7 +49,7 @@ function Join() {
       } catch {}
       await navigate({ to: '/assess', search: { t: r.candidateToken } })
     } catch (err) {
-      setError(err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : 'Could not start. Please try again.')
+      setError(cleanError(err, 'Could not start. Please try again.'))
       setBusy(false)
     }
   }
@@ -77,7 +77,7 @@ function Join() {
             <ul className="mt-5 space-y-2.5 text-sm">
               <li className="flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2.5"><Clock className="size-4 shrink-0 text-primary" />{info.minutes} minutes. The timer starts when you begin.</li>
               {info.aiAssisted ? (
-                <li className="flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2.5"><Bot className="size-4 shrink-0 text-primary" />You'll work with an AI coding assistant.</li>
+                <li className="flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2.5"><Bot className="size-4 shrink-0 text-primary" />You'll work alongside an AI agent you can question.</li>
               ) : null}
               <li className="flex items-center gap-3 rounded-lg bg-muted/60 px-3 py-2.5"><ShieldCheck className="size-4 shrink-0 text-primary" />Your progress saves automatically.</li>
             </ul>

@@ -4,6 +4,7 @@ import { ArrowRight, Check, Loader2, Play, Plus, Send, X } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { BuildScenario } from '@/lib/scenario'
 import { cn } from '@/lib/utils'
+import { cleanError } from '@/components/rb'
 
 // Build-with-AI workspace: Task → Code editor → AI assistant → Tests → Submit.
 // The assistant runs server-side (convex/builds.ts) so every prompt, response,
@@ -143,11 +144,7 @@ export function AssistantChat({
       scroll()
     } catch (err) {
       setPrompt(text)
-      setError(
-        err instanceof Error && /Uncaught Error: /.test(err.message)
-          ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0]
-          : 'No reply this time. Please try again in a moment.',
-      )
+      setError(cleanError(err, 'No reply this time. Please try again in a moment.'))
     } finally {
       setPending('')
     }

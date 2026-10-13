@@ -1,5 +1,7 @@
 import { v } from "convex/values"
 import { internalAction } from "./_generated/server"
+import type { ActionCtx } from "./_generated/server"
+import type { Id } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
 import { ANSWER_KEYS, ASSUMPTION_KEYS, SCENARIO_META } from "./answerKey"
 import type { AnswerKey, KeyItem } from "./answerKey"
@@ -480,6 +482,11 @@ function assumptionsFor(scenarioId: string, key: AnswerKey): Assumption[] {
 
 /** Transient failures (not credits, not bad input) are retried this many times, 2 and 8 minutes apart. */
 const GRADE_RETRIES = 2
+const UNREACHABLE = "AI judges unreachable"
+/** Every judge call failed (network, provider outage): worth retrying before settling for a judge-less grade. */
+const allFailed = (traces: Trace[]) => traces.length > 0 && traces.every((t) => !t.ok)
+const retryLater = (ctx: ActionCtx, submissionId: Id<"submissions">, attempt: number) =>
+  ctx.scheduler.runAfter(2 * 60_000 * 4 ** attempt, internal.grading.grade, { submissionId, attempt: attempt + 1 })
 
 export const grade = internalAction({
   args: { submissionId: v.id("submissions"), attempt: v.optional(v.number()) },
@@ -505,6 +512,7 @@ export const grade = internalAction({
           liveAsker(traces, cache),
         )
         if (creditsExhausted(traces)) await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error: PAUSED })
+        else if (allFailed(traces) && (args.attempt ?? 0) < GRADE_RETRIES) await retryLater(ctx, args.submissionId, args.attempt ?? 0)
         else await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
       } finally {
         if (traces.length) {
@@ -561,13 +569,15 @@ export const grade = internalAction({
       }
       // Budget guard: don't escalate every submission as "judges unavailable" when the account is out of credits.
       if (creditsExhausted(traces)) throw new Error(PAUSED)
+      // On the last attempt the deterministic grade is kept (flagged "AI judges were unavailable").
+      if (allFailed(traces) && (args.attempt ?? 0) < GRADE_RETRIES) throw new Error(UNREACHABLE)
       if (configured.note) result.configNote = configured.note
       await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
     } catch (err) {
       const error = err instanceof Error ? err.message : "Grading failed"
       const attempt = args.attempt ?? 0
       if (error !== PAUSED && attempt < GRADE_RETRIES) {
-        await ctx.scheduler.runAfter(2 * 60_000 * 4 ** attempt, internal.grading.grade, { submissionId: args.submissionId, attempt: attempt + 1 })
+        await retryLater(ctx, args.submissionId, attempt)
       } else {
         await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error })
       }

@@ -3,7 +3,7 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { AuthLoading, Authenticated, Unauthenticated, useMutation, useQuery } from 'convex/react'
 import { Loader2, LogOut, ShieldCheck } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { Page, PageSpinner, RecruiterNav } from '@/components/rb'
+import { Page, PageSpinner, RecruiterNav, cleanError } from '@/components/rb'
 
 /**
  * Wraps every recruiter-only page. Candidates never see this: they take the
@@ -94,7 +94,7 @@ function Membership({ children }: { children: React.ReactNode }) {
     try {
       await fn()
     } catch (err) {
-      setError(err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : 'Something went wrong.')
+      setError(cleanError(err))
     } finally {
       setBusy(false)
     }

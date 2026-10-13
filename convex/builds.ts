@@ -150,7 +150,8 @@ export const ask = action({
           reply = out
           tokens = usage
         } else model = "scripted"
-      } catch {
+      } catch (err) {
+        console.error(`agent model ${model} failed: ${err instanceof Error ? err.message : err}`)
         model = "scripted"
         // builds: scripted reply stands; reviews: handled below
       }

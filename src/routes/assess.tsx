@@ -3,7 +3,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ArrowRight, Check, Clock, Info, Loader2, Lock, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { SeverityChip, TopBar } from '@/components/rb'
+import { SeverityChip, TopBar, cleanError } from '@/components/rb'
 import { SCENARIOS, SEVERITIES } from '@/lib/scenario'
 import type { AnyScenario, BuildScenario, DecisionScenario, Scenario, Severity } from '@/lib/scenario'
 import { AssistantChat, BuildWorkspace } from '@/components/build-workspace'
@@ -42,7 +42,7 @@ const useScenario = () => useContext(ScenarioContext)
 const KIND_LABEL: Record<AnyScenario['kind'], string> = { code: 'Code review', decision: 'Design review', build: 'Build with AI' }
 
 const clean = (err: unknown, fallback: string) =>
-  err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : fallback
+  cleanError(err, fallback)
 
 function Assess() {
   const { t: token, g: groupToken } = Route.useSearch()

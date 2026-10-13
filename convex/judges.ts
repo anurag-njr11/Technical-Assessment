@@ -93,6 +93,9 @@ export type Asker = (judge: Judge, prompt: string, stage: string) => Promise<Jud
  * Any OpenAI-compatible chat endpoint: OpenRouter (default, serves every panel
  * model with one key), Ollama (`http://localhost:11434/v1`), Groq, Together...
  */
+/** Judges answer in short JSON; the agent replies in a few sentences plus one code block. */
+const MAX_TOKENS = 800
+
 export async function callModel(
   ref: ModelRef,
   prompt: string,
@@ -108,6 +111,8 @@ export async function callModel(
     body: JSON.stringify({
       model: ref.model,
       temperature: 0,
+      // Without a cap, OpenRouter reserves the model's full output budget and returns 402 on low balances.
+      max_tokens: MAX_TOKENS,
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
