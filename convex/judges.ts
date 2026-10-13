@@ -127,16 +127,30 @@ export async function callModel(
   return String(res.choices?.[0]?.message?.content ?? "")
 }
 
+/** §21.2 result cache: judge replies keyed by sha256(prompt version, model, prompt). */
+export type JudgeCache = { get: (key: string) => Promise<string | null>; put: (key: string, text: string) => Promise<void> }
+
+async function sha256(s: string) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
+  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
 /**
  * Returns an Asker that calls the primary model, falls back to the judge's
  * other-family model on failure, and records one trace per model call.
+ * With a cache, an identical earlier question to the same model is answered
+ * from it (no call, no trace). Evaluation runs pass no cache: they measure live variance.
  */
-export function liveAsker(traces: Trace[]): Asker {
+export function liveAsker(traces: Trace[], cache?: JudgeCache): Asker {
   return async (judge, prompt, stage) => {
     for (const ref of [judge.primary, judge.fallback]) {
+      const key = cache ? await sha256(`${PROMPT_VERSION}\u0000${ref.model}\u0000${prompt}`) : ""
+      const hit = cache ? await cache.get(key) : null
+      if (hit !== null) return { text: hit, model: ref.model, family: ref.family }
       const started = Date.now()
       try {
         const text = await callModel(ref, prompt)
+        if (cache) await cache.put(key, text)
         traces.push({
           stage, judge: judge.name, model: ref.model, family: ref.family, ok: true,
           latencyMs: Date.now() - started, inputChars: SYSTEM.length + prompt.length,

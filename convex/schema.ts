@@ -470,6 +470,15 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
   }).index("by_kind", ["kind", "startedAt"]),
 
+  // §21.2: cached judge replies (see judges.liveAsker); purged after 30 days.
+  judgeCache: defineTable({
+    key: v.string(),
+    text: v.string(),
+    at: v.number(),
+  })
+    .index("by_key", ["key"])
+    .index("by_at", ["at"]),
+
   // EX-2 / NFR-OBS-1: one row per judge call.
   judgeCalls: defineTable({
     submissionId: v.optional(v.id("submissions")),

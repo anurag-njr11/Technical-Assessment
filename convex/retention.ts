@@ -21,6 +21,9 @@ export const purge = internalMutation({
     for (const r of await ctx.db.query("rateLimits").take(500)) {
       if (r.windowStart < Date.now() - DAY) await ctx.db.delete(r._id)
     }
+    for (const r of await ctx.db.query("judgeCache").withIndex("by_at", (q) => q.lt("at", Date.now() - 30 * DAY)).take(500)) {
+      await ctx.db.delete(r._id)
+    }
     const days = retentionDays()
     if (!days) return 0
     const cutoff = Date.now() - days * DAY

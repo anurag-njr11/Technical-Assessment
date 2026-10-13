@@ -4,7 +4,7 @@ import { internal } from "./_generated/api"
 import { ANSWER_KEYS, ASSUMPTION_KEYS, SCENARIO_META } from "./answerKey"
 import type { AnswerKey, KeyItem } from "./answerKey"
 import { PAUSED, PROMPT_VERSION, RUBRIC_VERSION, creditsExhausted, getPanel, liveAsker, redact } from "./judges"
-import type { Asker, Judge, JudgeAnswer, Trace } from "./judges"
+import type { Asker, Judge, JudgeAnswer, JudgeCache, Trace } from "./judges"
 import { SCORING_VERSION, computeScore } from "./scoring"
 import { gradeTrajectory } from "./trajectory"
 import type { Assumption } from "./trajectory"
@@ -478,11 +478,18 @@ function assumptionsFor(scenarioId: string, key: AnswerKey): Assumption[] {
   }))
 }
 
+/** Transient failures (not credits, not bad input) are retried this many times, 2 and 8 minutes apart. */
+const GRADE_RETRIES = 2
+
 export const grade = internalAction({
-  args: { submissionId: v.id("submissions") },
+  args: { submissionId: v.id("submissions"), attempt: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const sub = await ctx.runQuery(internal.submissions.getInternal, { id: args.submissionId })
     if (!sub) return
+    const cache: JudgeCache = {
+      get: (key) => ctx.runQuery(internal.tracing.cacheGet, { key }),
+      put: async (key, text) => { await ctx.runMutation(internal.tracing.cachePut, { key, text }) },
+    }
     if (SCENARIO_META[sub.scenarioId]?.kind === "build") {
       const traces: Trace[] = []
       try {
@@ -495,7 +502,7 @@ export const grade = internalAction({
             candidateEmail: sub.candidateEmail,
             task: buildTask(sub.scenarioId),
           },
-          liveAsker(traces),
+          liveAsker(traces, cache),
         )
         if (creditsExhausted(traces)) await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error: PAUSED })
         else await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
@@ -519,7 +526,7 @@ export const grade = internalAction({
         ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId })
         : []
       const configured = applyConfig(key, config)
-      const ask = liveAsker(traces)
+      const ask = liveAsker(traces, cache)
       let result = await gradeSubmission(
         {
           comments: sub.comments,
@@ -557,10 +564,13 @@ export const grade = internalAction({
       if (configured.note) result.configNote = configured.note
       await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
     } catch (err) {
-      await ctx.runMutation(internal.submissions.saveError, {
-        id: args.submissionId,
-        error: err instanceof Error ? err.message : "Grading failed",
-      })
+      const error = err instanceof Error ? err.message : "Grading failed"
+      const attempt = args.attempt ?? 0
+      if (error !== PAUSED && attempt < GRADE_RETRIES) {
+        await ctx.scheduler.runAfter(2 * 60_000 * 4 ** attempt, internal.grading.grade, { submissionId: args.submissionId, attempt: attempt + 1 })
+      } else {
+        await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error })
+      }
     } finally {
       if (traces.length) {
         await ctx.runMutation(internal.tracing.record, {
