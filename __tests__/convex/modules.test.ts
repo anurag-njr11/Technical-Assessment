@@ -99,6 +99,7 @@ describe("M3 live assistant and orders-api-build", () => {
     const events = (await t.run(async (ctx) => ctx.db.query("autosaves").first()))!.events!
     expect(events.map((e) => e.type)).toEqual(["ai_prompt", "ai_response", "ai_prompt", "ai_response", "fault_injected", "code_edit"])
     expect(events[5].data).toHaveLength(4000)
+    expect([JSON.parse(events[1].data!).model, JSON.parse(events[3].data!).model]).toEqual(["test/assistant", "scripted"])
   })
 
   it("falls back to the scripted reply when the model is down", async () => {

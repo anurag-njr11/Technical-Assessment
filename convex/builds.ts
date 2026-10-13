@@ -100,6 +100,8 @@ export const recordAsk = internalMutation({
     code: v.string(),
     fault: v.optional(v.string()),
     tokens: v.object({ input: v.number(), output: v.number() }),
+    // Which model produced the reply ("scripted" for the fixed replies), for comparability across candidates.
+    model: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const c = await requireActive(ctx, args.token)
@@ -108,7 +110,7 @@ export const recordAsk = internalMutation({
     if (full(events, 3)) throw new Error("The assistant session is full. Please submit your work.")
     const t = Date.now() - (c.startedAt ?? Date.now())
     const promptEv = { id: eventId(events.length), t, type: "ai_prompt" as const, data: args.prompt }
-    const responseEv = { id: eventId(events.length + 1), t, type: "ai_response" as const, data: JSON.stringify({ text: args.text, code: args.code }), tokens: args.tokens }
+    const responseEv = { id: eventId(events.length + 1), t, type: "ai_response" as const, data: JSON.stringify({ text: args.text, code: args.code, ...(args.model ? { model: args.model } : {}) }), tokens: args.tokens }
     const added: BuildEvent[] = [promptEv, responseEv]
     if (args.fault) added.push({ id: eventId(events.length + 2), t, type: "fault_injected", data: `${args.fault}|${responseEv.id}` })
     await ctx.db.patch(draft._id, { events: [...events, ...added] as Doc<"autosaves">["events"], updatedAt: Date.now() })
@@ -135,8 +137,9 @@ export const ask = action({
     const scripted = build ? assistantReply(p.scenarioId, prompt) : { text: "", code: "", fault: undefined }
     let reply = { text: scripted.text, code: scripted.code }
     let tokens = { input: estimate(prompt), output: estimate(reply.text + reply.code) }
+    let model = "scripted"
     if (!scripted.fault && llm) {
-      const model = process.env.ASSISTANT_MODEL ?? "anthropic/claude-sonnet-5"
+      model = SCENARIO_META[p.scenarioId]?.agentModel ?? process.env.ASSISTANT_MODEL ?? "anthropic/claude-sonnet-5"
       const code = build ? `<current_code>\n${p.code}\n</current_code>\n\n` : ""
       const user = `<task>\n${buildTask(p.scenarioId)}\n</task>\n\n<conversation>\n${p.history}\n</conversation>\n\n${code}<request>\n${p.prompt}\n</request>`
       const usage = { input: 0, output: 0 }
@@ -146,13 +149,14 @@ export const ask = action({
         if (out.text || out.code) {
           reply = out
           tokens = usage
-        }
+        } else model = "scripted"
       } catch {
+        model = "scripted"
         // builds: scripted reply stands; reviews: handled below
       }
     }
     if (!reply.text && !reply.code) throw new Error("The agent didn't reply this time. Please try again.")
-    return await ctx.runMutation(internal.builds.recordAsk, { token: args.token, prompt, ...reply, fault: scripted.fault, tokens })
+    return await ctx.runMutation(internal.builds.recordAsk, { token: args.token, prompt, ...reply, fault: scripted.fault, tokens, model })
   },
 })
 

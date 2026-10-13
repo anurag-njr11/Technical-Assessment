@@ -37,6 +37,8 @@ export type ScenarioMeta = {
   followUps: string[]
   /** TR-4: the answer key may be shown to candidates only once a scenario is retired. */
   retired?: boolean
+  /** §7.4: pins the agent/assistant model for this scenario version (else ASSISTANT_MODEL). Bump `version` when changing it. */
+  agentModel?: string
 }
 
 export const SCENARIO_META: Record<string, ScenarioMeta> = {
