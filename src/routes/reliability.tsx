@@ -110,6 +110,11 @@ function Reliability() {
             target={`≤ ${t.perturbation} pts`} status={d.perturbation ? s(d.perturbation.maxAbs <= t.perturbation, 1) : 'nodata'} />
           <Tile id="SM-8" label="Grading latency p95" value={d.latency.n ? `${fmt(d.latency.p95, 0)} s` : '—'} detail={d.latency.n ? `p50 ${fmt(d.latency.p50, 0)} s · n=${d.latency.n}` : undefined}
             target={`≤ ${t.latencyP95Sec} s`} status={s(d.latency.p95 <= t.latencyP95Sec, d.latency.n)} />
+          {d.shadow ? (
+            <Tile id="EX-3" label="Shadow panel vs live" value={`${pct(d.shadow.itemAgreement)} items agree`}
+              detail={`mean |Δ overall| ${fmt(d.shadow.meanAbsDelta, 1)} pts · n=${d.shadow.n} · ${d.shadow.models.join(', ')}`}
+              target="Switch only if ≥ live accuracy" status="nodata" />
+          ) : null}
           <Tile id="REL-4" label="Inter-judge Fleiss' κ" value={fmt(d.interJudge.fleiss)} detail={`${pct(d.interJudge.unanimity.p)} unanimous · n=${d.interJudge.n}`}
             target="report only" status={d.interJudge.n ? 'pass' : 'nodata'} />
           <Tile id="REL-10" label="Adversarial suite" value={d.adversarial ? `${d.adversarial.passed}/${d.adversarial.total}` : '—'} detail="Real judges vs injection, bait and edge cases"

@@ -155,3 +155,27 @@ describe("REL-7 CI gate", () => {
     expect(await t.query(internal.reliability.ciGateStatus, { runId })).toEqual({ status: "done", gate: null })
   })
 })
+
+describe("EX-3 shadow grading", () => {
+  it("grades live submissions with the shadow panel without touching the live result", async () => {
+    const shadowPanel = [
+      { name: "Judge A", primary: { model: "x/a", family: "fa" }, fallback: { model: "x/b", family: "fb" } },
+      { name: "Judge B", primary: { model: "x/c", family: "fc" }, fallback: { model: "x/d", family: "fd" } },
+      { name: "Judge C", primary: { model: "x/e", family: "fe" }, fallback: { model: "x/f", family: "ff" } },
+    ]
+    process.env.SHADOW_PANEL_JSON = JSON.stringify(shadowPanel)
+    try {
+      const t = makeT()
+      const { sub, owner } = await submitAndGrade(t, [])
+      const rows = await t.run(async (ctx) => ctx.db.query("shadowResults").collect())
+      expect(rows).toHaveLength(1)
+      expect(rows[0].models).toContain("x/a")
+      const live = await t.run(async (ctx) => (await ctx.db.get(sub._id))!)
+      expect(live.result!.overall).toBe(sub.result!.overall)
+      const d = await owner.query(api.reliability.dashboard, {})
+      expect(d.shadow).toMatchObject({ n: 1, meanAbsDelta: 0, itemAgreement: 1 })
+    } finally {
+      delete process.env.SHADOW_PANEL_JSON
+    }
+  })
+})

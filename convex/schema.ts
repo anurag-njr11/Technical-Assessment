@@ -498,6 +498,14 @@ export default defineSchema({
     .index("by_submission", ["submissionId"])
     .index("by_submittedAt", ["submittedAt"]),
 
+  // EX-3: the same live submission graded by a candidate panel (SHADOW_PANEL_JSON).
+  shadowResults: defineTable({
+    submissionId: v.id("submissions"),
+    models: v.array(v.string()),
+    summary: scoreSummaryValidator,
+    at: v.number(),
+  }).index("by_submission", ["submissionId"]),
+
   // §21.2: cached judge replies (see judges.liveAsker); purged after 30 days.
   judgeCache: defineTable({
     key: v.string(),

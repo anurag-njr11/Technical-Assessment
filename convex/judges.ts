@@ -45,14 +45,14 @@ export function validatePanel(panel: Judge[]): Judge[] {
  * The live panel. Owners can swap models without a code change by setting the
  * Convex env var JUDGE_PANEL_JSON to a Judge[] array; it is validated the same way.
  */
-export function getPanel(): Judge[] {
-  const raw = process.env.JUDGE_PANEL_JSON
+export function getPanel(envVar: "JUDGE_PANEL_JSON" | "SHADOW_PANEL_JSON" = "JUDGE_PANEL_JSON"): Judge[] {
+  const raw = process.env[envVar]
   if (!raw) return validatePanel(DEFAULT_PANEL)
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error("JUDGE_PANEL_JSON is not valid JSON.")
+    throw new Error(`${envVar} is not valid JSON.`)
   }
   return validatePanel(parsed as Judge[])
 }

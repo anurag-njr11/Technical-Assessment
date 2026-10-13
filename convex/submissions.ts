@@ -218,7 +218,7 @@ export const retryPaused = mutation({
 export async function deleteSubmission(ctx: MutationCtx, id: Id<"submissions">) {
   const row = await ctx.db.get(id)
   if (!row) return
-  for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes", "metricRows"] as const) {
+  for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes", "metricRows", "shadowResults"] as const) {
     const rows = await ctx.db
       .query(table)
       .withIndex("by_submission", (q) => q.eq("submissionId", id))
@@ -316,6 +316,10 @@ export const saveResult = internalMutation({
       error: undefined,
     })
     await writeMetricRow(ctx, { ...sub, machineResult: args.result })
+    // EX-3: shadow-grade answer-key modules with the candidate panel; it never changes the live result.
+    if (process.env.SHADOW_PANEL_JSON && ANSWER_KEYS[sub.scenarioId]) {
+      await ctx.scheduler.runAfter(0, internal.reliability.shadow, { submissionId: args.id })
+    }
     if (process.env.WEBHOOK_URL) await ctx.scheduler.runAfter(0, internal.webhooks.graded, { submissionId: args.id })
   },
 })

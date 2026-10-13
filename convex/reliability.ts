@@ -9,11 +9,13 @@ import { gradeSubmission } from "./grading"
 import { writeMetricRow } from "./submissions"
 import { PROMPT_VERSION, RUBRIC_VERSION, callModel, getPanel, liveAsker } from "./judges"
 import type { Trace } from "./judges"
-import { SCORING_VERSION, itemOrdinal } from "./scoring"
+import { SCORING_VERSION, itemOrdinal, overallFrom } from "./scoring"
+import type { ComponentVec } from "./metrics"
 import type { Result } from "./scoring"
 import { ADVERSARIAL_CASES, PERTURBATIONS, REWRITE_SYSTEM } from "./evaluation"
 import type { EvalSubmission } from "./evaluation"
 import { buildDashboard } from "./dashboard"
+import type { Slim } from "./dashboard"
 import { scoreSummaryValidator } from "./schema"
 
 // Offline evaluation runs (REL-3 test–retest, FB-2 perturbation, REL-7 golden
@@ -152,6 +154,33 @@ async function rewrite(text: string): Promise<string> {
   }
 }
 
+/** EX-3: M1 grade of a live submission with the shadow panel (no cache: it measures the candidate config). */
+export const shadow = internalAction({
+  args: { submissionId: v.id("submissions") },
+  handler: async (ctx, args) => {
+    const sub = await ctx.runQuery(internal.submissions.getInternal, { id: args.submissionId })
+    const key = sub ? ANSWER_KEYS[sub.scenarioId] : undefined
+    if (!sub || !key) return
+    const panel = getPanel("SHADOW_PANEL_JSON")
+    const traces: Trace[] = []
+    const r = await gradeSubmission({ comments: sub.comments, verdict: sub.verdict, candidateName: sub.candidateName, candidateEmail: sub.candidateEmail }, key, liveAsker(traces), panel)
+    await ctx.runMutation(internal.reliability.saveShadow, {
+      submissionId: args.submissionId,
+      models: panel.flatMap((j) => [j.primary.model, j.fallback.model]),
+      summary: summarize("shadow", r),
+    })
+  },
+})
+
+export const saveShadow = internalMutation({
+  args: { submissionId: v.id("submissions"), models: v.array(v.string()), summary: scoreSummaryValidator },
+  handler: async (ctx, args) => {
+    const old = await ctx.db.query("shadowResults").withIndex("by_submission", (q) => q.eq("submissionId", args.submissionId)).unique()
+    if (old) await ctx.db.delete(old._id)
+    await ctx.db.insert("shadowResults", { ...args, at: Date.now() })
+  },
+})
+
 /** One-off for results graded before metricRows existed: `npx convex run reliability:backfillMetricRows`. */
 export const backfillMetricRows = internalMutation({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
@@ -214,13 +243,40 @@ export const step = internalAction({
 // Dashboard (REL-8)
 // ---------------------------------------------------------------------------
 
+const m1Overall = (m: Slim) =>
+  overallFrom(Object.fromEntries(Object.entries(m.components).map(([k, c]) => [k, c.value])) as ComponentVec, m.weights as ComponentVec)
+
 async function loadDashboard(ctx: QueryCtx) {
   // Slim rows (~2 KB each, written at grading time) keep this inside per-query read limits.
   const rows = await ctx.db.query("metricRows").withIndex("by_submittedAt").order("desc").take(2000)
   const subs = rows.map((r) => ({ _id: r.submissionId as string, scenarioId: r.scenarioId, submittedAt: r.submittedAt, machine: r.machine }))
   const labels = (await ctx.db.query("goldenLabels").take(8000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
   const runs = await ctx.db.query("evalRuns").order("desc").take(200)
-  return { data: buildDashboard(subs, labels as any, runs), runs }
+  // EX-3: live (M1 machine) vs shadow panel on the same submissions.
+  const live = new Map(rows.map((r) => [r.submissionId as string, r.machine]))
+  const shadows = (await ctx.db.query("shadowResults").order("desc").take(500)).filter((x) => live.has(x.submissionId))
+  const shadow = shadows.length
+    ? {
+        n: shadows.length,
+        models: shadows[0].models,
+        // The shadow grade is M1 only, so compare with the live M1 score (before the trajectory blend).
+        meanAbsDelta: shadows.reduce((s, x) => s + Math.abs(x.summary.overall - m1Overall(live.get(x.submissionId)!)), 0) / shadows.length,
+        itemAgreement: (() => {
+          let agree = 0, n = 0
+          for (const x of shadows) {
+            const m = live.get(x.submissionId)!
+            for (const it of x.summary.items) {
+              const li = m.items.find((i) => i.id === it.id)
+              if (!li) continue
+              n++
+              if ((itemOrdinal(li.kind, li.outcome, li.explanation) > 0) === (it.score > 0)) agree++
+            }
+          }
+          return n ? agree / n : NaN
+        })(),
+      }
+    : null
+  return { data: { ...buildDashboard(subs, labels as any, runs), shadow }, runs }
 }
 
 // ---------------------------------------------------------------------------
