@@ -3,6 +3,13 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import type { MutationCtx, QueryCtx } from "./_generated/server"
 import type { Doc } from "./_generated/dataModel"
+import { googleEnabled } from "./auth"
+
+/** Public: which sign-in options the login page should offer. */
+export const signInOptions = query({
+  args: {},
+  handler: async () => ({ google: googleEnabled() }),
+})
 
 function normEmail(email: string): string {
   return email.trim().toLowerCase()

@@ -130,4 +130,8 @@ describe("access control", () => {
       delete process.env.WORKSPACE_OWNER_EMAIL
     }
   })
+
+  it("offers Google sign-in only when it is configured", async () => {
+    expect(await makeT().query(api.access.signInOptions, {})).toEqual({ google: false })
+  })
 })

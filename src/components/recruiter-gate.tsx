@@ -224,6 +224,7 @@ function friendly(err: unknown, fallback: string): string {
 
 function SignInForms() {
   const { signIn } = useAuthActions()
+  const options = useQuery(api.access.signInOptions)
   const [step, setStep] = useState<Step>('signIn')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -376,6 +377,14 @@ function SignInForms() {
         {err}
         <PrimaryButton type="submit" busy={busy}>{step === 'signIn' ? 'Sign in' : 'Create account'}</PrimaryButton>
       </form>
+      {options?.google ? (
+        <button
+          onClick={() => void signIn('google', { redirectTo: '/recruiter' }).catch((e) => setError(friendly(e, 'Google sign-in failed.')))}
+          className="mt-3 w-full rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent"
+        >
+          Continue with Google
+        </button>
+      ) : null}
       <div className="mt-4 flex flex-wrap justify-between gap-2 text-sm">
         <button onClick={() => reset(step === 'signIn' ? 'signUp' : 'signIn')} className="font-medium text-primary hover:underline">
           {step === 'signIn' ? 'Create an account' : 'Have an account? Sign in'}
