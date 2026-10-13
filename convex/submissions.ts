@@ -213,25 +213,33 @@ export const retryPaused = mutation({
   },
 })
 
+/** Deletes a submission and everything derived from it: reviews, labels, traces, outcomes, candidate, draft. */
+export async function deleteSubmission(ctx: MutationCtx, id: Id<"submissions">) {
+  const row = await ctx.db.get(id)
+  if (!row) return
+  for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes"] as const) {
+    const rows = await ctx.db
+      .query(table)
+      .withIndex("by_submission", (q) => q.eq("submissionId", id))
+      .collect()
+    for (const r of rows) await ctx.db.delete(r._id)
+  }
+  if (row.candidateId) await deleteCandidate(ctx, row.candidateId)
+  await ctx.db.delete(id)
+}
+
+export async function deleteCandidate(ctx: MutationCtx, id: Id<"candidates">) {
+  const drafts = await ctx.db.query("autosaves").withIndex("by_candidate", (q) => q.eq("candidateId", id)).collect()
+  for (const d of drafts) await ctx.db.delete(d._id)
+  if (await ctx.db.get(id)) await ctx.db.delete(id)
+}
+
 /** Owner-only: permanently deletes a submission and everything derived from it (SEC-17). */
 export const remove = mutation({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
     await requireOwner(ctx)
-    const row = await ctx.db.get(args.id)
-    if (!row) return
-    for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes"] as const) {
-      const rows = await ctx.db
-        .query(table)
-        .withIndex("by_submission", (q) => q.eq("submissionId", args.id))
-        .collect()
-      for (const r of rows) await ctx.db.delete(r._id)
-    }
-    if (row.candidateId) {
-      const c = await ctx.db.get(row.candidateId)
-      if (c) await ctx.db.delete(c._id)
-    }
-    await ctx.db.delete(args.id)
+    await deleteSubmission(ctx, args.id)
   },
 })
 
