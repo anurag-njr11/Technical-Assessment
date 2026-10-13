@@ -129,7 +129,7 @@ export const ask = action({
     const prompt = checkPrompt(args.prompt)
     const p = await ctx.runMutation(internal.builds.prepareAsk, { token: args.token, prompt })
     const build = p.kind === "build"
-    const llm = !!(process.env.MACALY_API_TOKEN || process.env.LLM_API_KEY || process.env.LLM_BASE_URL)
+    const llm = !!(process.env.LLM_API_KEY || process.env.LLM_BASE_URL)
     if (!build && !llm) throw new Error("The agent is unavailable right now. Please continue your review without it.")
     const scripted = build ? assistantReply(p.scenarioId, prompt) : { text: "", code: "", fault: undefined }
     let reply = { text: scripted.text, code: scripted.code }
