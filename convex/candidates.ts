@@ -111,13 +111,7 @@ export const create = mutation({
       await ctx.scheduler.runAfter(0, internal.email.send, {
         to: email,
         subject: "Your ReviewBench assessment",
-        text: `Hi ${name},
-
-You've been invited to an engineering assessment. Open your personal link when you're ready; the timer starts only when you press Start.
-
-${link}
-
-This link is for you only. Please don't share it.`,
+        text: `Hi ${name},\n\nYou've been invited to an engineering assessment. Open your personal link when you're ready; the timer starts only when you press Start.\n\n${link}\n\nThis link is for you only. Please don't share it.`,
       })
     }
     return { ...first!, groupToken: groupToken ?? null }

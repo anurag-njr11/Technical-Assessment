@@ -44,6 +44,10 @@ function fakeJudge(model: string, prompt: string) {
   if (mode === "broke") return new Response("insufficient credits", { status: 402 })
   if (mode === "garbage") return chat("I think it's fine!")
 
+  if (prompt.includes("<comment_to_rewrite>")) {
+    // Non-native rewrite: drop articles, keep the technical words.
+    return chat(between(prompt, "<comment_to_rewrite", "</comment_to_rewrite>").replace(/\b(the|a|an)\s/gi, ""))
+  }
   const comment = between(prompt, "<candidate_comment", "</candidate_comment>")
   const lc = comment.toLowerCase()
   let answer: Record<string, unknown>

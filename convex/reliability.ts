@@ -6,11 +6,11 @@ import { internal } from "./_generated/api"
 import { requireOwner, requireRecruiter } from "./access"
 import { ANSWER_KEYS } from "./answerKey"
 import { gradeSubmission } from "./grading"
-import { PROMPT_VERSION, RUBRIC_VERSION, getPanel, liveAsker } from "./judges"
+import { PROMPT_VERSION, RUBRIC_VERSION, callModel, getPanel, liveAsker } from "./judges"
 import type { Trace } from "./judges"
 import { SCORING_VERSION, itemOrdinal } from "./scoring"
 import type { Result } from "./scoring"
-import { ADVERSARIAL_CASES, PERTURBATIONS } from "./evaluation"
+import { ADVERSARIAL_CASES, PERTURBATIONS, REWRITE_SYSTEM } from "./evaluation"
 import type { EvalSubmission } from "./evaluation"
 import { buildDashboard } from "./dashboard"
 import { scoreSummaryValidator } from "./schema"
@@ -140,6 +140,17 @@ export function summarize(label: string, r: Result) {
   }
 }
 
+/** FB-2 non-native variant: one model rewrite per comment; falls back to the original text on failure. */
+async function rewrite(text: string): Promise<string> {
+  const model = process.env.REWRITE_MODEL ?? process.env.ASSISTANT_MODEL ?? "anthropic/claude-sonnet-5"
+  try {
+    const out = (await callModel({ model, family: "rewrite" }, `<comment_to_rewrite>\n${text}\n</comment_to_rewrite>`, REWRITE_SYSTEM)).trim()
+    return out ? out.slice(0, 4000) : text
+  } catch {
+    return text
+  }
+}
+
 export const step = internalAction({
   args: { runId: v.id("evalRuns"), index: v.number() },
   handler: async (ctx, args) => {
@@ -159,7 +170,11 @@ export const step = internalAction({
         const sub = await ctx.runQuery(internal.submissions.getInternal, { id: subId })
         if (!sub) throw new Error(`Submission ${subId} no longer exists`)
         let input: EvalSubmission = { candidateName: sub.candidateName, comments: sub.comments, verdict: sub.verdict }
-        if (run.kind === "perturbation") input = PERTURBATIONS.find((p) => p.name === unit)!.apply(input)
+        if (run.kind === "perturbation") {
+          const p = PERTURBATIONS.find((x) => x.name === unit)!
+          input = p.apply(input)
+          if (p.llm) input = { ...input, comments: await Promise.all(input.comments.map(async (c) => ({ ...c, text: await rewrite(c.text) }))) }
+        }
         const r = await gradeSubmission({ ...input, candidateEmail: sub.candidateEmail }, ANSWER_KEYS[sub.scenarioId], ask)
         summary = summarize(unit, r)
       }

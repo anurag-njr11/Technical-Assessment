@@ -155,11 +155,7 @@ export const emailLink = mutation({
       await ctx.scheduler.runAfter(0, internal.email.send, {
         to,
         subject: `Assessment: ${a.title}`,
-        text: `Hi,
-
-You've been invited to take "${a.title}" (${a.minutes} minutes). Open the link, enter your name and press Start when you're ready.
-
-${siteUrl(`/a/${a.token}`)}`,
+        text: `Hi,\n\nYou've been invited to take "${a.title}" (${a.minutes} minutes). Open the link, enter your name and press Start when you're ready.\n\n${siteUrl(`/a/${a.token}`)}`,
       })
     }
     return emails.length
@@ -210,11 +206,7 @@ export const join = mutation({
       await ctx.scheduler.runAfter(0, internal.email.send, {
         to: email!,
         subject: `Continue your assessment: ${a.title}`,
-        text: `Hi ${existing.name},
-
-Here is your personal link to continue where you left off:
-
-${siteUrl(`/assess?t=${existing.token}`)}`,
+        text: `Hi ${existing.name},\n\nHere is your personal link to continue where you left off:\n\n${siteUrl(`/assess?t=${existing.token}`)}`,
       })
       return { candidateToken: null, emailed: true }
     }
