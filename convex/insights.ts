@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server"
 import type { QueryCtx } from "./_generated/server"
 import { requireRecruiter } from "./access"
 import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
-import { fourFifths, pearson, rasch } from "./metrics"
+import { MIN_2PL, fourFifths, irt, pearson } from "./metrics"
 import { PASS_SCORE } from "./items"
 
 // Per-submission context (SCR-3 ability, SCR-5/CU-6 local norms, CU-7 outcome)
@@ -39,7 +39,7 @@ export const forSubmission = query({
     const ties = bench.filter((x) => x === sub.result!.overall).length
     const percentile = bench.length ? Math.round((100 * (below + ties / 2)) / bench.length) : null
 
-    // Rasch ability over all graded submissions of this scenario.
+    // IRT ability over all graded submissions of this scenario (2PL once there are enough).
     let ability: { theta: number; se: number; n: number } | null = null
     const key = ANSWER_KEYS[sub.scenarioId]
     if (key && peers.length >= 3) {
@@ -50,7 +50,7 @@ export const forSubmission = query({
           return r ? (r.outcome === "found" ? 1 : 0) : null
         }),
       ) as Array<Array<0 | 1 | null>>
-      const est = rasch(matrix)
+      const est = irt(matrix, { twoPL: peers.length >= MIN_2PL })
       const idx = peers.findIndex((s) => s._id === sub._id)
       if (idx >= 0) ability = { theta: est.theta[idx], se: est.se[idx], n: peers.length }
     }

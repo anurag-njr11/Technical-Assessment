@@ -183,23 +183,36 @@ export function fitWeights(
 // ---------------------------------------------------------------------------
 
 export function rasch(responses: Array<Array<0 | 1 | null>>, iters = 60) {
+  return irt(responses, { twoPL: false, iters })
+}
+
+/** Submissions per scenario before discrimination (2PL) is estimated; below this, Rasch. */
+export const MIN_2PL = 30
+
+/**
+ * SCR-3: 1PL/2PL IRT by MAP with weak priors θ ~ N(0,1), b ~ N(0,2²), log a ~ N(0,0.5²),
+ * one Newton step per parameter per sweep. With twoPL off every a stays 1 (Rasch).
+ */
+export function irt(responses: Array<Array<0 | 1 | null>>, opts: { twoPL: boolean; iters?: number }) {
   const P = responses.length
   const I = P ? responses[0].length : 0
   const theta = new Array<number>(P).fill(0)
   const b = new Array<number>(I).fill(0)
-  const prob = (t: number, d: number) => 1 / (1 + Math.exp(-(t - d)))
-  for (let it = 0; it < iters; it++) {
+  const a = new Array<number>(I).fill(1)
+  const prob = (t: number, i: number) => 1 / (1 + Math.exp(-a[i] * (t - b[i])))
+  const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x))
+  for (let it = 0; it < (opts.iters ?? 60); it++) {
     for (let p = 0; p < P; p++) {
       let g = -theta[p]
       let h = -1
       for (let i = 0; i < I; i++) {
         const x = responses[p][i]
         if (x === null) continue
-        const pr = prob(theta[p], b[i])
-        g += x - pr
-        h -= pr * (1 - pr)
+        const pr = prob(theta[p], i)
+        g += a[i] * (x - pr)
+        h -= a[i] * a[i] * pr * (1 - pr)
       }
-      theta[p] = Math.max(-6, Math.min(6, theta[p] - g / h))
+      theta[p] = clamp(theta[p] - g / h, -6, 6)
     }
     for (let i = 0; i < I; i++) {
       let g = -b[i] / 4
@@ -207,19 +220,33 @@ export function rasch(responses: Array<Array<0 | 1 | null>>, iters = 60) {
       for (let p = 0; p < P; p++) {
         const x = responses[p][i]
         if (x === null) continue
-        const pr = prob(theta[p], b[i])
-        g -= x - pr
-        h -= pr * (1 - pr)
+        const pr = prob(theta[p], i)
+        g -= a[i] * (x - pr)
+        h -= a[i] * a[i] * pr * (1 - pr)
       }
-      b[i] = Math.max(-6, Math.min(6, b[i] - g / h))
+      b[i] = clamp(b[i] - g / h, -6, 6)
+      if (!opts.twoPL) continue
+      // Newton on log a (keeps a positive).
+      const la = Math.log(a[i])
+      let ga = -la / 0.25
+      let ha = -1 / 0.25
+      for (let p = 0; p < P; p++) {
+        const x = responses[p][i]
+        if (x === null) continue
+        const pr = prob(theta[p], i)
+        const d = a[i] * (theta[p] - b[i])
+        ga += (x - pr) * d
+        ha -= pr * (1 - pr) * d * d
+      }
+      a[i] = Math.exp(clamp(la - ga / ha, -1.5, 1.5))
     }
   }
   const se = theta.map((t, p) => {
     let info = 1
-    for (let i = 0; i < I; i++) if (responses[p][i] !== null) info += prob(t, b[i]) * (1 - prob(t, b[i]))
+    for (let i = 0; i < I; i++) if (responses[p][i] !== null) info += a[i] * a[i] * prob(t, i) * (1 - prob(t, i))
     return 1 / Math.sqrt(info)
   })
-  return { theta, se, b }
+  return { theta, se, b, a, model: opts.twoPL ? ("2PL" as const) : ("1PL" as const) }
 }
 
 // ---------------------------------------------------------------------------

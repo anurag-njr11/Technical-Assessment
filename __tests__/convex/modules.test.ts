@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { api } from "../../convex/_generated/api"
-import { fourFifths, rasch } from "../../convex/metrics"
+import { fourFifths, irt, rasch } from "../../convex/metrics"
 import { ANSWER_KEYS, ASSUMPTION_KEYS } from "../../convex/answerKey"
 import { SCENARIOS } from "../../src/lib/scenario"
 import { ANSWERS, installFakeJudges, makeT, seedOwner, uninstallFakeJudges } from "./helpers"
@@ -220,6 +220,19 @@ describe("SCR-3 Rasch and SM-6 four-fifths", () => {
     expect(theta[2]).toBeGreaterThan(theta[3])
     expect(b[2]).toBeGreaterThan(b[0])
     expect(se.every((x) => x > 0 && x < 1)).toBe(true)
+  })
+
+  it("2PL gives a sharper item a higher discrimination", () => {
+    // 60 candidates on a θ grid; item 0 tracks ability exactly (step), item 1 is noisy.
+    const rows = Array.from({ length: 60 }, (_, k) => {
+      const t = -3 + (6 * k) / 59
+      return [t > 0 ? 1 : 0, (k % 3 === 0) !== t > 0 ? 1 : 0, t > -1 ? 1 : 0] as Array<0 | 1>
+    })
+    const est = irt(rows, { twoPL: true })
+    expect(est.model).toBe("2PL")
+    expect(est.a[0]).toBeGreaterThan(est.a[1])
+    expect(est.b[0]).toBeGreaterThan(est.b[2]) // item 2 is easier
+    expect(irt(rows, { twoPL: false }).a).toEqual([1, 1, 1])
   })
 
   it("flags an impact ratio under 0.8", () => {

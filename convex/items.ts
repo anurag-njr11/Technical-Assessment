@@ -4,7 +4,7 @@ import type { QueryCtx } from "./_generated/server"
 import { requireOwner, requireRecruiter } from "./access"
 import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
 import type { AnswerKey } from "./answerKey"
-import { fourFifths, rasch } from "./metrics"
+import { MIN_2PL, fourFifths, irt as fitIrt } from "./metrics"
 import { computeScore } from "./scoring"
 
 // Item bank (SB-3, SB-4) and category emphasis (CU-2), with guardrails and an
@@ -98,7 +98,7 @@ export const stats = query({
             return r ? (r.outcome === "found" ? 1 : 0) : null
           }),
         ) as Array<Array<0 | 1 | null>>
-        const irt = mine.length >= 2 ? rasch(matrix) : null
+        const irt = mine.length >= 2 ? fitIrt(matrix, { twoPL: mine.length >= MIN_2PL }) : null
         return {
           scenarioId: id,
           title: meta.title,
@@ -118,6 +118,7 @@ export const stats = query({
               rate: outcomes.length ? hit / outcomes.length : null,
               n: outcomes.length,
               difficulty: irt && idx >= 0 ? irt.b[idx] : null,
+              discrimination: irt?.model === "2PL" && idx >= 0 ? irt.a[idx] : null,
               enabled: !config.disabled.some((d) => d.scenarioId === id && d.itemId === i.id),
             }
           }),

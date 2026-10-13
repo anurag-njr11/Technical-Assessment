@@ -57,7 +57,7 @@ function Items() {
         <PageHeader
           eyebrow="Configuration"
           title="Item bank"
-          description="Every planted issue and decoy, how often candidates find it, and its Rasch difficulty (higher = harder; shown once 2+ submissions exist). Owners can switch issues off or change category emphasis within validated ranges. Changes apply to submissions graded from now on, and each change runs an adverse-impact check."
+          description="Every planted issue and decoy, how often candidates find it, and its IRT difficulty (higher = harder; shown once 2+ submissions exist; from 30 submissions a 2PL model also estimates discrimination “a”, how sharply the item separates stronger from weaker candidates). Owners can switch issues off or change category emphasis within validated ranges. Changes apply to submissions graded from now on, and each change runs an adverse-impact check."
         />
         {msg ? <p role="status" className="rb-rise mt-4 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">{msg}</p> : null}
         {!data ? (
@@ -116,7 +116,10 @@ function Items() {
                         <td className="px-3 py-2.5"><SeverityChip severity={i.severity} /></td>
                         <td className="px-3 py-2.5 font-mono">{i.weight}</td>
                         <td className="px-3 py-2.5 font-mono">{pct(i.rate)} <span className="text-xs text-muted-foreground">n={i.n}</span></td>
-                        <td className="px-3 py-2.5 font-mono">{i.difficulty === null ? '—' : i.difficulty.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 font-mono">
+                          {i.difficulty === null ? '—' : i.difficulty.toFixed(2)}
+                          {i.discrimination !== null ? <span className="text-xs text-muted-foreground"> · a {i.discrimination.toFixed(2)}</span> : null}
+                        </td>
                         <td className="px-6 py-2.5">
                           {i.kind === 'decoy' ? (
                             <span className="text-xs text-muted-foreground">Always (decoy)</span>
