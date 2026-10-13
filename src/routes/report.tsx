@@ -185,7 +185,7 @@ function Report() {
             <>
               {scenario?.kind === 'code' && scenario.assumptions?.length ? <AgentPR scenario={scenario} findings={result.trajectory?.findings ?? []} /> : null}
               {result.trajectory ? (
-                <EvidenceReport trajectory={result.trajectory} overall={result.overall} band={result.band} code={sub.build?.code} events={sub.build?.events} />
+                <EvidenceReport trajectory={result.trajectory} overall={result.overall} band={result.band} code={sub.build?.code} events={sub.build?.events} submissionId={sub._id} />
               ) : null}
               {result.machine ? (
                 <section className="rounded-xl border border-border bg-card p-4 text-sm">
@@ -248,7 +248,7 @@ function Report() {
                 <h2 className="px-6 pt-5 text-sm font-semibold">{ITEMS_TITLE[kind]}</h2>
                 <div className="mt-3 divide-y divide-border">
                   {result.items.map((item) => (
-                    <ItemRow key={item.id} item={item} submissionId={sub._id} comments={sub.comments} />
+                    <ItemRow key={item.id} item={item} submissionId={sub._id} comments={sub.comments} build={kind === 'build'} />
                   ))}
                 </div>
               </section>
@@ -353,7 +353,7 @@ function Report() {
   )
 }
 
-function ItemRow({ item, submissionId, comments }: { item: ItemT; submissionId: string; comments: SubComment[] }) {
+function ItemRow({ item, submissionId, comments, build }: { item: ItemT; submissionId: string; comments: SubComment[]; build: boolean }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const discarded = item.votes.filter((v) => !v.valid).length
@@ -386,12 +386,14 @@ function ItemRow({ item, submissionId, comments }: { item: ItemT; submissionId: 
             {open ? 'Hide judge votes' : 'Show judge votes'}
           </button>
         ) : null}
-        <button onClick={() => setEditing((o) => !o)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
-          {editing ? 'Cancel override' : 'Override outcome'}
-        </button>
+        {item.outcome !== 'not_exposed' ? (
+          <button onClick={() => setEditing((o) => !o)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+            {editing ? 'Cancel override' : 'Override outcome'}
+          </button>
+        ) : null}
       </div>
       {open ? <Votes votes={item.votes} mode={item.kind} /> : null}
-      {editing ? <OverrideForm item={item} submissionId={submissionId} comments={comments} onDone={() => setEditing(false)} /> : null}
+      {editing ? <OverrideForm item={item} submissionId={submissionId} comments={comments} build={build} onDone={() => setEditing(false)} /> : null}
     </div>
   )
 }
@@ -429,7 +431,7 @@ function Votes({ votes, mode }: { votes: VoteT[]; mode: 'issue' | 'decoy' | 'cla
 const inputCls = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30'
 const btnCls = 'rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60'
 
-function OverrideForm({ item, submissionId, comments, onDone }: { item: ItemT; submissionId: string; comments: SubComment[]; onDone: () => void }) {
+function OverrideForm({ item, submissionId, comments, build, onDone }: { item: ItemT; submissionId: string; comments: SubComment[]; build: boolean; onDone: () => void }) {
   const override = useMutation(api.reviews.overrideItem)
   const options = item.kind === 'issue' ? (['found', 'missed'] as const) : (['clean', 'false_alarm'] as const)
   const [outcome, setOutcome] = useState<string>(item.outcome)
@@ -446,8 +448,8 @@ function OverrideForm({ item, submissionId, comments, onDone }: { item: ItemT; s
         submissionId: submissionId as Id<'submissions'>,
         itemId: item.id,
         outcome: outcome as 'found' | 'missed' | 'clean' | 'false_alarm',
-        explanation: outcome === 'found' ? Number(explanation) : undefined,
-        commentId: commentId || undefined,
+        explanation: outcome === 'found' && !build ? Number(explanation) : undefined,
+        commentId: build ? undefined : commentId || undefined,
         justification,
       })
       onDone()
@@ -463,17 +465,19 @@ function OverrideForm({ item, submissionId, comments, onDone }: { item: ItemT; s
         <select value={outcome} onChange={(e) => setOutcome(e.target.value)} aria-label="Outcome" className={inputCls}>
           {options.map((o) => <option key={o} value={o}>{o.replace('_', ' ')}</option>)}
         </select>
-        {item.kind === 'issue' && outcome === 'found' ? (
+        {item.kind === 'issue' && outcome === 'found' && !build ? (
           <select value={explanation} onChange={(e) => setExplanation(e.target.value)} aria-label="Explanation score" className={inputCls}>
             <option value="0">Explanation 0 (neither)</option>
             <option value="1">Explanation 1 (impact or fix)</option>
             <option value="2">Explanation 2 (impact and fix)</option>
           </select>
         ) : <span />}
-        <select value={commentId} onChange={(e) => setCommentId(e.target.value)} aria-label="Supporting comment" className={inputCls}>
-          <option value="">Keep linked comment</option>
-          {comments.map((c) => <option key={c.id} value={c.id}>{c.file}:{c.line} · {c.text.slice(0, 40)}</option>)}
-        </select>
+        {build ? null : (
+          <select value={commentId} onChange={(e) => setCommentId(e.target.value)} aria-label="Supporting comment" className={inputCls}>
+            <option value="">Keep linked comment</option>
+            {comments.map((c) => <option key={c.id} value={c.id}>{c.file}:{c.line} · {c.text.slice(0, 40)}</option>)}
+          </select>
+        )}
       </div>
       <textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Why? (required, recorded in the audit log)" aria-label="Justification" className={inputCls} />
       {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
@@ -533,7 +537,7 @@ function HumanReview({ submissionId, needsReview, resolved }: { submissionId: st
     <section className="rounded-xl border border-border bg-card p-6">
       <h2 className="text-[15px] font-semibold tracking-tight">Human review</h2>
       {history.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">No overrides yet. Use “Override outcome” on any item, or “Reclassify” on other comments.</p>
+        <p className="mt-2 text-sm text-muted-foreground">No overrides yet. Use “Override outcome” on any item, “Override” on an AI finding, or “Reclassify” on other comments.</p>
       ) : (
         <ul className="mt-3 space-y-2 text-sm">
           {history.map((h) => (

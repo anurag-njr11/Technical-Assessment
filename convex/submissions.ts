@@ -266,7 +266,7 @@ export async function loadOverrides(ctx: { db: MutationCtx["db"] }, id: Id<"subm
     .map((r) =>
       r.target === "item"
         ? { target: "item" as const, targetId: r.targetId, after: r.after, afterExplanation: r.afterExplanation, commentId: r.commentId }
-        : { target: "comment" as const, targetId: r.targetId, after: r.after },
+        : { target: r.target, targetId: r.targetId, after: r.after },
     )
 }
 
@@ -278,6 +278,7 @@ export function effectiveResult(sub: Doc<"submissions">, machine: Result, overri
     verdict: sub.verdict,
     // M3 builds have no answer key; their "verdict" slot is task completion.
     expectedVerdict: key?.expectedVerdict ?? "none",
+    build: SCENARIO_META[sub.scenarioId]?.kind === "build",
   })
 }
 

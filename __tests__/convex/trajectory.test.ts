@@ -150,4 +150,30 @@ describe("M3 trajectory council", () => {
     expect(o.overall).toBe(blendOverall(deterministicOnly, r.trajectory!.dimensions))
     expect(o.overall).not.toBe(deterministicOnly)
   })
+
+  it("a human answer to a finding re-scores its dimensions and the overall", async () => {
+    const r = await codeReview((_, s) => (s === "trajectory:A1" ? CHALLENGE : NO))
+    const ctx = { comments: [], verdict: "request_changes", expectedVerdict: "request_changes" }
+    const b9 = r.trajectory!.findings.find((x) => x.id === "B9")!
+    expect(b9.good).toBe(true)
+    const reasoning = (res: typeof r) => res.trajectory!.dimensions.find((d) => d.key === "reasoning")!.score
+    const o = applyOverrides(r, [{ target: "finding", targetId: "B9", after: "yes" }], ctx)
+    expect(o.trajectory!.findings.find((x) => x.id === "B9")).toMatchObject({ humanDecision: true, overridden: true, needsReview: false })
+    expect(reasoning(o)).toBeGreaterThan(reasoning(r))
+    expect(o.overall).toBeGreaterThan(r.overall)
+    // Un-challenging the flawed assumption flips the finding to "missed".
+    const a = applyOverrides(r, [{ target: "finding", targetId: "A1", after: "no" }], ctx)
+    expect(a.trajectory!.findings.find((x) => x.id === "A1")!.kind).toBe("missed")
+  })
+
+  it("a Directed Build fault can be overridden to found and the score follows", async () => {
+    const r = await gradeTrajectory({ ...input, code: CODE.replace("code.toUpperCase()", "code") }, fake(() => NO), DEFAULT_PANEL)
+    expect(r.items.find((i) => i.id === "F3")!.outcome).toBe("missed")
+    const o = applyOverrides(r, [{ target: "item", targetId: "F3", after: "found" }], { comments: [], verdict: "none", expectedVerdict: "none", build: true })
+    expect(o.components.detection.value).toBe(1)
+    // The judges' "didn't notice it" finding still counts alongside the now-fixed fault.
+    const det = (res: typeof r) => res.trajectory!.dimensions.find((d) => d.key === "issueDetection")!.score
+    expect([det(r), det(o)]).toEqual([0, 50])
+    expect(o.overall).toBeGreaterThan(r.overall)
+  })
 })

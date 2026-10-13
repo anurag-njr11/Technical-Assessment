@@ -1,5 +1,9 @@
 import { useState } from 'react'
+import { useMutation } from 'convex/react'
 import { AlertTriangle } from 'lucide-react'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { cleanError } from '@/components/rb'
 import { cn } from '@/lib/utils'
 import type { Scenario } from '@/lib/scenario'
 
@@ -17,6 +21,8 @@ export type Finding = {
   agreement: string
   confidence: 'high' | 'medium' | 'low'
   needsReview: boolean
+  humanDecision?: boolean
+  overridden?: boolean
 }
 export type TrajectoryResult = { dimensions: Array<{ key: string; label: string; score: number; detail: string }>; findings: Finding[] }
 export type BuildEvent = { id: string; t: number; type: string; data?: string; tokens?: { input: number; output: number } }
@@ -33,7 +39,7 @@ const isSplit = (f: Finding) => {
   return valid.some((v) => v.decision) && valid.some((v) => !v.decision)
 }
 
-export function EvidenceReport({ trajectory, overall, band, code, events }: { trajectory: TrajectoryResult; overall: number; band: string; code?: string; events?: BuildEvent[] }) {
+export function EvidenceReport({ trajectory, overall, band, code, events, submissionId }: { trajectory: TrajectoryResult; overall: number; band: string; code?: string; events?: BuildEvent[]; submissionId?: string }) {
   const [highlight, setHighlight] = useState<string | null>(null)
   const jump = (id: string) => {
     setHighlight(id)
@@ -98,7 +104,7 @@ export function EvidenceReport({ trajectory, overall, band, code, events }: { tr
           <section key={g.kind} className="rounded-xl border border-border bg-card p-6">
             <h2 className="text-[15px] font-semibold tracking-tight">{g.title} <span className="font-normal text-muted-foreground">({fs.length})</span></h2>
             <div className="mt-3 space-y-3">
-              {fs.map((f) => <FindingCard key={f.id} f={f} dimension={dimLabel[f.dimension] ?? f.dimension} onJump={jump} />)}
+              {fs.map((f) => <FindingCard key={f.id} f={f} dimension={dimLabel[f.dimension] ?? f.dimension} onJump={jump} submissionId={submissionId} />)}
             </div>
           </section>
         )
@@ -115,8 +121,9 @@ const CONFIDENCE: Record<Finding['confidence'], string> = {
   low: 'bg-destructive-soft text-destructive border-destructive/30',
 }
 
-function FindingCard({ f, dimension, onJump }: { f: Finding; dimension: string; onJump: (id: string) => void }) {
+function FindingCard({ f, dimension, onJump, submissionId }: { f: Finding; dimension: string; onJump: (id: string) => void; submissionId?: string }) {
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   const valid = f.votes.filter((v) => v.valid)
   const quote = (valid.find((v) => v.decision && v.evidence) ?? valid.find((v) => v.evidence))?.evidence
   const eventIds = [...new Set(valid.flatMap((v) => v.eventIds))]
@@ -126,6 +133,9 @@ function FindingCard({ f, dimension, onJump }: { f: Finding; dimension: string; 
         <span className="min-w-0 flex-1 text-sm font-medium">{f.title} <span className="text-xs font-normal text-muted-foreground">· {dimension}</span></span>
         <span className="text-xs text-muted-foreground">Judges: {f.agreement} agree</span>
         <span className={cn('rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize', CONFIDENCE[f.confidence])}>{f.confidence} confidence</span>
+        {f.overridden ? (
+          <span className="rounded-full border border-border px-2.5 py-0.5 text-xs font-semibold">Human: {f.humanDecision ? 'Yes' : 'No'}</span>
+        ) : null}
         {f.needsReview ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-destructive-soft px-2.5 py-0.5 text-xs font-semibold text-destructive">
             <AlertTriangle className="size-3" /> Human review recommended
@@ -145,7 +155,13 @@ function FindingCard({ f, dimension, onJump }: { f: Finding; dimension: string; 
         <button onClick={() => setOpen((o) => !o)} className="ml-auto font-semibold text-muted-foreground hover:text-foreground">
           {open ? 'Hide judge votes' : 'Show judge votes'}
         </button>
+        {submissionId ? (
+          <button onClick={() => setEditing((e) => !e)} className="font-semibold text-muted-foreground hover:text-foreground">
+            {editing ? 'Cancel override' : 'Override'}
+          </button>
+        ) : null}
       </div>
+      {editing && submissionId ? <FindingOverride f={f} submissionId={submissionId} onDone={() => setEditing(false)} /> : null}
       {open ? (
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           {f.votes.map((v) => (
@@ -161,6 +177,36 @@ function FindingCard({ f, dimension, onJump }: { f: Finding; dimension: string; 
           ))}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/** A reviewer answers the finding's question themselves; dimensions and the overall are re-scored. */
+function FindingOverride({ f, submissionId, onDone }: { f: Finding; submissionId: string; onDone: () => void }) {
+  const override = useMutation(api.reviews.overrideFinding)
+  const [decision, setDecision] = useState(f.humanDecision ?? true)
+  const [justification, setJustification] = useState('')
+  const [error, setError] = useState('')
+  const cls = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30'
+  const save = async () => {
+    setError('')
+    try {
+      await override({ submissionId: submissionId as Id<'submissions'>, findingId: f.id, decision, justification })
+      onDone()
+    } catch (err) {
+      setError(cleanError(err))
+    }
+  }
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-3">
+      <p className="text-xs text-muted-foreground">{f.question}</p>
+      <select value={decision ? 'yes' : 'no'} onChange={(e) => setDecision(e.target.value === 'yes')} aria-label="Your answer" className={cls}>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+      <textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Why? (required, recorded in the audit log)" aria-label="Justification" className={cls} />
+      {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+      <button onClick={save} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90">Save override</button>
     </div>
   )
 }

@@ -155,7 +155,21 @@ export const trajectoryValidator = v.object({
   // promptQuality, interactionQuality, verification, efficiency,
   // challengeAssumptions. score is 0-100.
   dimensions: v.array(
-    v.object({ key: v.string(), label: v.string(), score: v.number(), detail: v.string() }),
+    v.object({
+      key: v.string(),
+      label: v.string(),
+      score: v.number(),
+      detail: v.string(),
+      // Raw facts shown before the signals (efficiency: token counts).
+      note: v.optional(v.string()),
+      // score = mean(signal values); stored so human overrides can re-score (absent on results graded before v0.7).
+      signals: v.optional(v.array(v.object({
+        label: v.string(),
+        value: v.number(),
+        component: v.optional(v.string()), // deterministic: tracks result.components[component].value
+        finding: v.optional(v.string()), // judged: finding id
+      }))),
+    }),
   ),
   findings: v.array(
     v.object({
@@ -173,6 +187,12 @@ export const trajectoryValidator = v.object({
       agreement: v.string(), // e.g. "3/3"
       confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
       needsReview: v.boolean(),
+      // The answer that reflects well on the candidate, and any other dimensions it feeds.
+      good: v.optional(v.boolean()),
+      also: v.optional(v.array(v.string())),
+      // Set by a human override (HR-2).
+      humanDecision: v.optional(v.boolean()),
+      overridden: v.optional(v.boolean()),
     }),
   ),
 })
@@ -400,7 +420,7 @@ export default defineSchema({
   // HR-3: audit log of every human override.
   reviews: defineTable({
     submissionId: v.id("submissions"),
-    target: v.union(v.literal("item"), v.literal("comment")),
+    target: v.union(v.literal("item"), v.literal("comment"), v.literal("finding")),
     targetId: v.string(),
     before: v.string(),
     after: v.string(),

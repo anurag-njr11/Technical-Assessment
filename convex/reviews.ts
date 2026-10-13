@@ -79,12 +79,6 @@ async function recompute(ctx: MutationCtx, id: Id<"submissions">) {
   await ctx.db.patch(id, { machineResult: machine, result: effectiveResult(sub, machine, overrides) })
 }
 
-function noBuildOverrides(scenarioId: string) {
-  if (SCENARIO_META[scenarioId]?.kind === "build") {
-    throw new Error("Directed Build pilot results can't be overridden yet. Resolve the review with a note instead.")
-  }
-}
-
 function checkJustification(text: string) {
   const t = text.trim()
   if (t.length < MIN_JUSTIFICATION) throw new Error(`Write a justification (at least ${MIN_JUSTIFICATION} characters).`)
@@ -106,13 +100,14 @@ export const overrideItem = mutation({
     const justification = checkJustification(args.justification)
     const sub = await ctx.db.get(args.submissionId)
     if (!sub || sub.status !== "graded" || !sub.result) throw new Error("Only graded submissions can be reviewed.")
-    noBuildOverrides(sub.scenarioId)
     const item = sub.result.items.find((i) => i.id === args.itemId)
     if (!item) throw new Error("Unknown item.")
+    const build = SCENARIO_META[sub.scenarioId]?.kind === "build"
+    if (build && item.outcome === "not_exposed") throw new Error("This fault was never shown to the candidate, so it can't be scored.")
     const allowed = item.kind === "issue" ? ["found", "missed"] : ["clean", "false_alarm"]
     if (!allowed.includes(args.outcome)) throw new Error(`An ${item.kind} can only be marked ${allowed.join(" or ")}.`)
     let explanation: number | null = null
-    if (item.kind === "issue" && args.outcome === "found") {
+    if (item.kind === "issue" && args.outcome === "found" && !build) {
       explanation = args.explanation ?? 0
       if (![0, 1, 2].includes(explanation)) throw new Error("Explanation score must be 0, 1 or 2.")
     }
@@ -133,7 +128,8 @@ export const overrideItem = mutation({
       reviewerEmail: email,
       createdAt: now,
     })
-    await ctx.db.insert("goldenLabels", {
+    // Build faults are graded by code checks, not judges: they don't belong in the judge-accuracy golden set.
+    if (!build) await ctx.db.insert("goldenLabels", {
       submissionId: args.submissionId,
       targetId: item.id,
       grader: email,
@@ -141,6 +137,36 @@ export const overrideItem = mutation({
       outcome: args.outcome,
       explanation: explanation ?? undefined,
       createdAt: now,
+    })
+    await recompute(ctx, args.submissionId)
+  },
+})
+
+/** P7: a reviewer answers a trajectory finding's question themselves; the dimensions and overall are re-scored. */
+export const overrideFinding = mutation({
+  args: { submissionId: v.id("submissions"), findingId: v.string(), decision: v.boolean(), justification: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireRecruiter(ctx)
+    const justification = checkJustification(args.justification)
+    const sub = await ctx.db.get(args.submissionId)
+    if (!sub || sub.status !== "graded" || !sub.result) throw new Error("Only graded submissions can be reviewed.")
+    const finding = sub.result.trajectory?.findings.find((f) => f.id === args.findingId)
+    if (!finding) throw new Error("Unknown finding.")
+    const valid = finding.votes.filter((x) => x.valid)
+    const yes = valid.filter((x) => x.decision).length
+    const before = finding.humanDecision !== undefined
+      ? (finding.humanDecision ? "yes" : "no")
+      : valid.length >= 2 ? (yes > valid.length / 2 ? "yes" : "no") : "none"
+    await ctx.db.insert("reviews", {
+      submissionId: args.submissionId,
+      target: "finding",
+      targetId: finding.id,
+      before,
+      after: args.decision ? "yes" : "no",
+      justification,
+      reviewerId: me.userId,
+      reviewerEmail: await reviewerEmail(ctx, me.userId),
+      createdAt: Date.now(),
     })
     await recompute(ctx, args.submissionId)
   },

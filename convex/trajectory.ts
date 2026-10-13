@@ -10,27 +10,15 @@ import type { BuildEvent as ScenarioEvent } from "./buildScenario"
 import { evidenceIsReal, parseJson } from "./grading"
 import { getPanel, redact } from "./judges"
 import type { Asker, Judge } from "./judges"
-import { band, blendOverall } from "./scoring"
-import type { Result } from "./scoring"
+import { DIMENSIONS, band, blendOverall, dimensionsFrom } from "./scoring"
+import type { DimKey, Result, Signal } from "./scoring"
 
 // ai_response events carry the tokens spent on that exchange.
 type BuildEvent = ScenarioEvent & { tokens?: { input: number; output: number } }
 type Trajectory = NonNullable<Result["trajectory"]>
 type Finding = Trajectory["findings"][number]
 type Vote = Finding["votes"][number]
-type DimKey = keyof typeof DIMENSIONS
-
-export const DIMENSIONS = {
-  issueDetection: "Issue detection",
-  engineeringJudgment: "Technical/engineering judgment",
-  reasoning: "Reasoning & evidence-seeking",
-  trustCalibration: "AI trust calibration",
-  promptQuality: "Prompt quality",
-  interactionQuality: "AI interaction quality",
-  verification: "Verification/validation",
-  efficiency: "Token usage & efficiency",
-  challengeAssumptions: "Challenging incorrect AI assumptions",
-}
+export { DIMENSIONS }
 
 /** An assumption the AI agent stated in its PR rationale. `flawed` defaults to "maps to an answer-key issue". */
 export type Assumption = { id: string; text: string; flawed?: boolean; itemId?: string; why?: string }
@@ -208,6 +196,7 @@ export async function gradeTrajectory(input: TrajectoryInput, ask: Asker, panel:
     id: q.id, title: q.title, dimension: q.dimension,
     kind: q.dimension === "challengeAssumptions" && q.good ? (c.decision ? "detected" : "missed") : q.kind,
     question: q.question, votes, agreement: c.agreement, confidence: c.confidence, needsReview: c.needsReview,
+    good: q.good, ...(q.also ? { also: q.also } : {}),
   }))
 
   /*
@@ -233,31 +222,29 @@ export async function gradeTrajectory(input: TrajectoryInput, ask: Asker, panel:
   const spent = tokensIn + tokensOut
   const perToken = spent ? Math.min(1, (outcomes * TOKENS_PER_OUTCOME) / spent) : prompts.length ? Math.min(1, outcomes / prompts.length) : 0
 
-  const S: Record<DimKey, Array<[string, number]>> = {
-    issueDetection: [[isBuild ? "faults fixed" : "issues found", comp.detection.value]],
-    engineeringJudgment: isBuild ? [["required behaviour", comp.verdict.value]] : [["verdict", comp.verdict.value], ["decoys left alone", comp.decoyDiscipline.value]],
-    reasoning: !isBuild && base.followUpQuality ? [["follow-up answers", base.followUpQuality.value]] : [],
-    trustCalibration: isBuild ? [["correct suggestions used", comp.precision.value]] : [],
-    promptQuality: prompts.length ? [["specific prompts", prompts.filter((p) => p.trim().split(/\s+/).length >= 6).length / prompts.length]] : [],
+  // `component` signals track result.components, so human overrides of items re-score them.
+  const sig = (label: string, value: number, component?: keyof Result["components"]): Signal => ({ label, value, ...(component ? { component } : {}) })
+  const S: Record<DimKey, Signal[]> = {
+    issueDetection: [sig(isBuild ? "faults fixed" : "issues found", comp.detection.value, "detection")],
+    engineeringJudgment: isBuild
+      ? [sig("required behaviour", comp.verdict.value, "verdict")]
+      : [sig("verdict", comp.verdict.value, "verdict"), sig("decoys left alone", comp.decoyDiscipline.value, "decoyDiscipline")],
+    reasoning: !isBuild && base.followUpQuality ? [sig("follow-up answers", base.followUpQuality.value)] : [],
+    trustCalibration: isBuild ? [sig("correct suggestions used", comp.precision.value, "precision")] : [],
+    promptQuality: prompts.length ? [sig("specific prompts", prompts.filter((p) => p.trim().split(/\s+/).length >= 6).length / prompts.length)] : [],
     interactionQuality: [],
-    verification: isBuild ? [["test runs", comp.decoyDiscipline.value]] : [],
-    efficiency: prompts.length ? [[`outcomes per ${spent ? "token" : "prompt"}`, perToken]] : [],
+    verification: isBuild ? [sig("test runs", comp.decoyDiscipline.value, "decoyDiscipline")] : [],
+    efficiency: prompts.length ? [sig(`outcomes per ${spent ? "token" : "prompt"}`, perToken)] : [],
     challengeAssumptions: [],
   }
   for (const { q, c } of results) {
     if (c.decision === null) continue
-    for (const dim of [q.dimension, ...(q.also ?? [])]) S[dim].push([q.title, c.decision === q.good ? 1 : 0])
+    for (const dim of [q.dimension, ...(q.also ?? [])]) S[dim].push({ label: q.title, value: c.decision === q.good ? 1 : 0, finding: q.id })
   }
   const raw: Partial<Record<DimKey, string>> = {
     efficiency: `tokens in ${tokensIn}, out ${tokensOut}; ${prompts.length} prompt(s); ${outcomes} outcome(s) (${base.foundCount} issues found + ${challenged} correct challenges)`,
   }
-  const dimensions = (Object.keys(DIMENSIONS) as DimKey[])
-    .filter((key) => S[key].length)
-    .map((key) => ({
-      key, label: DIMENSIONS[key],
-      score: Math.round((100 * S[key].reduce((t, [, v]) => t + v, 0)) / S[key].length),
-      detail: [raw[key], ...S[key].map(([l, v]) => `${l}: ${Math.round(100 * v)}%`)].filter(Boolean).join("; "),
-    }))
+  const dimensions = dimensionsFrom(S, raw)
 
   // Overall: half the deterministic grade, half the mean of the other (judgment, challenge,
   // verification, ...) dimensions. Without judges the deterministic overall stands.
