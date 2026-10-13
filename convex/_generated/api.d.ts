@@ -35,6 +35,7 @@ import type * as scoring from "../scoring.js";
 import type * as submissions from "../submissions.js";
 import type * as tracing from "../tracing.js";
 import type * as trajectory from "../trajectory.js";
+import type * as webhooks from "../webhooks.js";
 
 import type {
   ApiFromModules,
@@ -70,6 +71,7 @@ declare const fullApi: ApiFromModules<{
   submissions: typeof submissions;
   tracing: typeof tracing;
   trajectory: typeof trajectory;
+  webhooks: typeof webhooks;
 }>;
 
 /**

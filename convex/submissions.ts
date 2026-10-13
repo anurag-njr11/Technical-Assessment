@@ -303,6 +303,7 @@ export const saveResult = internalMutation({
       result: effectiveResult(sub, args.result, overrides),
       error: undefined,
     })
+    if (process.env.WEBHOOK_URL) await ctx.scheduler.runAfter(0, internal.webhooks.graded, { submissionId: args.id })
   },
 })
 
