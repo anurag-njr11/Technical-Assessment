@@ -141,3 +141,17 @@ describe("REL-8 metric rows", () => {
     expect(await rows()).toBe(0)
   })
 })
+
+describe("REL-7 CI gate", () => {
+  it("starts a golden run only when labels exist and reports status until done", async () => {
+    const t = makeT()
+    expect(await t.mutation(internal.reliability.ciStartGolden, {})).toBeNull()
+    const { sub, owner } = await submitAndGrade(t, [])
+    await owner.mutation(api.golden.label, { submissionId: sub._id, items: [{ itemId: "I1", outcome: "missed" }], overall: 10 })
+    const runId = (await t.mutation(internal.reliability.ciStartGolden, {}))!
+    expect(await t.query(internal.reliability.ciGateStatus, { runId })).toMatchObject({ status: "running", total: 1 })
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    // No baseline yet: done, nothing to compare with.
+    expect(await t.query(internal.reliability.ciGateStatus, { runId })).toEqual({ status: "done", gate: null })
+  })
+})

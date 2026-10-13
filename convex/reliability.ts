@@ -1,7 +1,7 @@
 import { v } from "convex/values"
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
-import type { MutationCtx } from "./_generated/server"
+import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { internal } from "./_generated/api"
 import { requireOwner, requireRecruiter } from "./access"
 import { ANSWER_KEYS } from "./answerKey"
@@ -214,16 +214,46 @@ export const step = internalAction({
 // Dashboard (REL-8)
 // ---------------------------------------------------------------------------
 
+async function loadDashboard(ctx: QueryCtx) {
+  // Slim rows (~2 KB each, written at grading time) keep this inside per-query read limits.
+  const rows = await ctx.db.query("metricRows").withIndex("by_submittedAt").order("desc").take(2000)
+  const subs = rows.map((r) => ({ _id: r.submissionId as string, scenarioId: r.scenarioId, submittedAt: r.submittedAt, machine: r.machine }))
+  const labels = (await ctx.db.query("goldenLabels").take(8000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
+  const runs = await ctx.db.query("evalRuns").order("desc").take(200)
+  return { data: buildDashboard(subs, labels as any, runs), runs }
+}
+
+// ---------------------------------------------------------------------------
+// REL-7 in CI (scripts/ci-gate.mjs): start a golden-set run on a staging
+// deployment with real models, then poll until the gate passes or fails.
+// ---------------------------------------------------------------------------
+
+export const ciStartGolden = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const labels = await ctx.db.query("goldenLabels").take(5000)
+    const ids = [...new Set(labels.map((l) => l.submissionId as string))].slice(0, MAX_GOLDEN)
+    if (!ids.length) return null
+    return await createRun(ctx, "golden", ids, "ci")
+  },
+})
+
+export const ciGateStatus = internalQuery({
+  args: { runId: v.id("evalRuns") },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId)
+    if (!run) return { status: "error" as const, error: "run not found" }
+    if (run.status !== "done") return { status: run.status, done: run.runs.length, total: run.plan.length, error: run.error ?? null }
+    const { data } = await loadDashboard(ctx)
+    return { status: "done" as const, gate: data.gate && data.gate.candidateId === run._id ? data.gate : null }
+  },
+})
+
 export const dashboard = query({
   args: {},
   handler: async (ctx) => {
     await requireRecruiter(ctx)
-    // Slim rows (~2 KB each, written at grading time) keep this inside per-query read limits.
-    const rows = await ctx.db.query("metricRows").withIndex("by_submittedAt").order("desc").take(2000)
-    const subs = rows.map((r) => ({ _id: r.submissionId as string, scenarioId: r.scenarioId, submittedAt: r.submittedAt, machine: r.machine }))
-    const labels = (await ctx.db.query("goldenLabels").take(8000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
-    const runs = await ctx.db.query("evalRuns").order("desc").take(200)
-    const data = buildDashboard(subs, labels as any, runs)
+    const { data, runs } = await loadDashboard(ctx)
     const recent = runs.slice(0, 20).map((r) => ({
       _id: r._id,
       kind: r.kind,
