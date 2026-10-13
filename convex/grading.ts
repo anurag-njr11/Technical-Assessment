@@ -3,7 +3,7 @@ import { internalAction } from "./_generated/server"
 import { internal } from "./_generated/api"
 import { ANSWER_KEYS, ASSUMPTION_KEYS, SCENARIO_META } from "./answerKey"
 import type { AnswerKey, KeyItem } from "./answerKey"
-import { PROMPT_VERSION, RUBRIC_VERSION, getPanel, liveAsker, redact } from "./judges"
+import { PAUSED, PROMPT_VERSION, RUBRIC_VERSION, creditsExhausted, getPanel, liveAsker, redact } from "./judges"
 import type { Asker, Judge, JudgeAnswer, Trace } from "./judges"
 import { SCORING_VERSION, computeScore } from "./scoring"
 import { gradeTrajectory } from "./trajectory"
@@ -497,7 +497,8 @@ export const grade = internalAction({
           },
           liveAsker(traces),
         )
-        await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
+        if (creditsExhausted(traces)) await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error: PAUSED })
+        else await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
       } finally {
         if (traces.length) {
           await ctx.runMutation(internal.tracing.record, { submissionId: args.submissionId, promptVersion: PROMPT_VERSION, traces })
@@ -551,6 +552,8 @@ export const grade = internalAction({
           ask,
         )
       }
+      // Budget guard: don't escalate every submission as "judges unavailable" when the account is out of credits.
+      if (creditsExhausted(traces)) throw new Error(PAUSED)
       if (configured.note) result.configNote = configured.note
       await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
     } catch (err) {

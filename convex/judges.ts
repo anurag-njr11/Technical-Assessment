@@ -79,6 +79,14 @@ export type Trace = {
   at: number
 }
 
+const CREDITS_ERROR = "AI credits are currently unavailable."
+/** Stored as the submission error; the dashboard shows a banner and a "Retry all" button for these. */
+export const PAUSED = "Grading paused: AI credits exhausted. Top up the provider account, then retry."
+
+/** True when no model call succeeded and the provider reported exhausted credits (402). */
+export const creditsExhausted = (traces: Trace[]) =>
+  traces.length > 0 && traces.every((t) => !t.ok) && traces.some((t) => t.error === CREDITS_ERROR)
+
 export type Asker = (judge: Judge, prompt: string, stage: string) => Promise<JudgeAnswer>
 
 /**
@@ -106,7 +114,7 @@ export async function callModel(
       ],
     }),
   })
-  if (response.status === 402) throw new Error("AI credits are currently unavailable.")
+  if (response.status === 402) throw new Error(CREDITS_ERROR)
   if (!response.ok) throw new Error(`Model request failed (${response.status}).`)
   const res = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>

@@ -31,6 +31,10 @@ function Recruiter() {
   const rows = useQuery(api.submissions.list)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
+  const [level, setLevel] = useState('')
+  const [since, setSince] = useState('')
+  const retryPaused = useMutation(api.submissions.retryPaused)
+  const paused = rows?.filter((r) => r.paused).length ?? 0
   const completed = rows?.filter((r) => r.status === 'graded').length ?? 0
   const flagged = rows?.filter((r) => r.needsReview && !r.reviewResolved).length ?? 0
   // FR-R-5: filter by status and search by candidate name.
@@ -38,11 +42,13 @@ function Recruiter() {
     () =>
       rows?.filter((r) => {
         if (search && !r.candidateName.toLowerCase().includes(search.trim().toLowerCase())) return false
+        if (level && r.level !== level) return false
+        if (since && r.submittedAt < new Date(since).getTime()) return false
         if (status === 'review') return !!r.needsReview && !r.reviewResolved
         if (status !== 'all') return r.status === status
         return true
       }),
-    [rows, search, status],
+    [rows, search, status, level, since],
   )
 
   return (
@@ -52,6 +58,15 @@ function Recruiter() {
         title="Assessments"
         description="Create an assessment, share its link or QR code, then open each candidate's evidence-backed report."
       />
+
+      {paused ? (
+        <div role="alert" className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive-soft px-5 py-4 text-sm">
+          <AlertTriangle className="size-4 text-destructive" />
+          <span className="font-semibold text-destructive">Grading paused: AI credits exhausted.</span>
+          <span className="text-muted-foreground">{paused} submission{paused === 1 ? '' : 's'} waiting. Top up the provider account, then retry.</span>
+          <button onClick={() => void retryPaused({})} className={cn(btn.secondary, 'ml-auto')}>Retry all</button>
+        </div>
+      ) : null}
 
       <div className="rb-stagger mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Stat label="Submitted" value={rows?.length ?? 0} />
@@ -92,6 +107,11 @@ function Recruiter() {
             <option value="review">Needs review</option>
             <option value="error">Error</option>
           </select>
+          <select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Filter by level" className={cn(fieldCls, 'sm:w-36')}>
+            <option value="">All levels</option>
+            {LEVELS.map((l) => <option key={l}>{l}</option>)}
+          </select>
+          <input type="date" value={since} onChange={(e) => setSince(e.target.value)} aria-label="Submitted since" className={cn(fieldCls, 'sm:w-44')} />
           {visible ? <span className="text-xs text-muted-foreground sm:ml-auto">{visible.length} shown</span> : null}
         </div>
 

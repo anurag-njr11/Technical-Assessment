@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { api } from "../../convex/_generated/api"
 import { DEFAULT_PANEL, redact, validatePanel } from "../../convex/judges"
 import { resultValidator } from "../../convex/schema"
 import type { C } from "./helpers"
-import { installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges } from "./helpers"
+import { ALL_MODELS, installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges } from "./helpers"
+import { PAUSED } from "../../convex/judges"
 
 beforeEach(installFakeJudges)
 afterEach(uninstallFakeJudges)
@@ -183,5 +184,22 @@ describe("FB-1 anonymization", () => {
     // The stored report still shows the candidate's original words.
     expect(result.items.find((i) => i.id === "I1")!.commentText).toContain("As Priya")
     expect(outcome(result, "I1")).toBe("found")
+  })
+})
+
+describe("budget guard", () => {
+  it("pauses grading instead of escalating when credits run out, and Retry all resumes", async () => {
+    const t = makeT()
+    for (const m of ALL_MODELS) modes[m] = "broke"
+    const { sub, owner } = await submitAndGrade(t, PERFECT)
+    expect(sub).toMatchObject({ status: "error", error: PAUSED })
+    expect((await owner.query(api.submissions.list, {}))[0].paused).toBe(true)
+
+    for (const m of ALL_MODELS) delete modes[m]
+    expect(await owner.mutation(api.submissions.retryPaused, {})).toBe(1)
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    const after = await t.run(async (ctx) => (await ctx.db.get(sub._id))!)
+    expect(after.status).toBe("graded")
+    expect(after.result!.reviewReasons.join(" ")).not.toMatch(/unavailable/)
   })
 })

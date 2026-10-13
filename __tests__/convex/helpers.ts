@@ -23,9 +23,14 @@ const KEYWORDS: Array<[RegExp, string, string]> = [
   [/only asserts the status code/, "assert", "I4"],
 ]
 
-export type Mode = "honest" | "fabricate" | "down" | "garbage" | "vague"
+export type Mode = "honest" | "fabricate" | "down" | "garbage" | "vague" | "broke"
 export const modes: Record<string, Mode> = {}
 export const prompts: string[] = []
+/** Every model in the default panel, for tests that switch them all at once. */
+export const ALL_MODELS = [
+  "google/gemini-3.6-flash", "qwen/qwen3-235b-a22b-2507", "anthropic/claude-sonnet-5",
+  "mistralai/mistral-large", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat",
+]
 
 function between(s: string, a: string, b: string) {
   const i = s.indexOf(a)
@@ -36,6 +41,7 @@ function between(s: string, a: string, b: string) {
 function fakeJudge(model: string, prompt: string) {
   const mode = modes[model] ?? "honest"
   if (mode === "down") return new Response("unavailable", { status: 503 })
+  if (mode === "broke") return new Response("insufficient credits", { status: 402 })
   if (mode === "garbage") return chat("I think it's fine!")
 
   const comment = between(prompt, "<candidate_comment", "</candidate_comment>")

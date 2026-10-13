@@ -14,6 +14,7 @@ import { requireOwner, requireRecruiter } from "./access"
 import { requireActive } from "./candidates"
 import { LIMITS, hit } from "./rateLimit"
 import { applyOverrides } from "./scoring"
+import { PAUSED } from "./judges"
 import type { Override, Result } from "./scoring"
 
 // FR-C-18 server limits.
@@ -169,6 +170,7 @@ export const list = query({
       reviewResolved: r.humanReview?.status === "resolved",
       kind: SCENARIO_META[r.scenarioId]?.kind ?? "code",
       appealOpen: r.appeal?.status === "open",
+      paused: r.status === "error" && r.error === PAUSED,
       released: !!r.released,
     }))
   },
@@ -192,6 +194,22 @@ export const regrade = mutation({
     if (!row) throw new Error("Submission not found.")
     await ctx.db.patch(args.id, { status: "grading", error: undefined })
     await ctx.scheduler.runAfter(0, internal.grading.grade, { submissionId: args.id })
+  },
+})
+
+/** Budget guard: re-queue every submission paused for exhausted AI credits. */
+export const retryPaused = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireRecruiter(ctx)
+    const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(500)
+    const paused = rows.filter((r) => r.status === "error" && r.error === PAUSED)
+    for (const [i, r] of paused.entries()) {
+      await ctx.db.patch(r._id, { status: "grading", error: undefined })
+      // Spread out so one top-up isn't drained by a burst.
+      await ctx.scheduler.runAfter(i * 5000, internal.grading.grade, { submissionId: r._id })
+    }
+    return paused.length
   },
 })
 
