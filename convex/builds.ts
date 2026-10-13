@@ -6,7 +6,7 @@ import { internal } from "./_generated/api"
 import { SCENARIO_META } from "./answerKey"
 import { assistantReply, buildTask } from "./buildScenario"
 import type { BuildEvent } from "./buildScenario"
-import { requireActive } from "./candidates"
+import { aiAllowed, requireActive } from "./candidates"
 import { callModel, redact } from "./judges"
 import { hit } from "./rateLimit"
 
@@ -71,6 +71,7 @@ export const prepareAsk = internalMutation({
   handler: async (ctx, args) => {
     const c = await requireActive(ctx, args.token)
     await hit(ctx, `ask:${c._id}`, 120)
+    if (!(await aiAllowed(ctx, c))) throw new Error("AI assistance is turned off for this assessment.")
     const draft = await draftFor(ctx, c)
     const events: BuildEvent[] = draft.events ?? []
     if (full(events, 3)) throw new Error("The assistant session is full. Please submit your work.")

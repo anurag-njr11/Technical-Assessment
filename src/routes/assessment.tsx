@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { AlertTriangle, ArrowLeft, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Download, Loader2, ShieldCheck } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
@@ -9,6 +9,7 @@ import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
 import { AssessmentLink } from '@/components/assessment-link'
 import { MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import { cn } from '@/lib/utils'
+import { downloadCsv } from '@/lib/csv'
 
 export const Route = createFileRoute('/assessment')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -60,6 +61,11 @@ const METRICS: Array<{ key: string; label: string; value: (r: Row) => number | n
   { key: 'time', label: 'Time taken', value: minutesTaken, show: (r) => (minutesTaken(r) === null ? '—' : `${Math.round(minutesTaken(r)!)} min`) },
   { key: 'verification', label: 'Testing / validation', value: (r) => r.dimensions.verification ?? null },
 ]
+/** One row per candidate with every metric, for hiring committees and ATS imports. */
+const exportRows = (name: string, rows: Row[]) =>
+  downloadCsv(name, ['Candidate', 'Email', 'Status', ...METRICS.map((m) => m.label), 'Tokens', 'Band', 'Verdict', 'Needs review', 'Human reviewed'],
+    rows.map((r) => [r.name, r.email, STATUS[r.status] ?? r.status, ...METRICS.map((m) => { const v = m.value(r); return v === null ? '' : Math.round(v) }),
+      r.tokens, r.band, r.verdict, r.needsReview, !!r.humanReview]))
 const fmt = (n: number | null) => (n === null ? '—' : String(Math.round(n)))
 
 function Assessment() {
@@ -127,9 +133,12 @@ function Assessment() {
           title={`Candidates (${rows.length})`}
           description="Tick 2–4 candidates to compare them side by side. Click a column to sort."
           actions={
-            <button onClick={() => setComparing(true)} disabled={picked.length < 2} className={btn.primary}>
-              Compare {picked.length ? `(${picked.length})` : ''}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => exportRows('candidates', rows)} disabled={!rows.length} className={btn.secondary}><Download className="size-4" /> Export CSV</button>
+              <button onClick={() => setComparing(true)} disabled={picked.length < 2} className={btn.primary}>
+                Compare {picked.length ? `(${picked.length})` : ''}
+              </button>
+            </div>
           }
         >
         <div className="mt-4 overflow-x-auto border-t border-border">
@@ -211,7 +220,10 @@ function Compare({ rows, onClose }: { rows: Row[]; onClose: () => void }) {
     <Panel
       className="rb-rise mt-5"
       title="Comparison"
-      actions={<button onClick={onClose} className={btn.secondary}>Close</button>}
+      actions={<>
+        <button onClick={() => exportRows('comparison', rows)} className={btn.secondary}><Download className="size-4" /> Export CSV</button>
+        <button onClick={onClose} className={btn.secondary}>Close</button>
+      </>}
     >
       <div className="overflow-x-auto">
       <table className="w-full min-w-[560px] border-collapse text-sm">

@@ -57,6 +57,7 @@ describe("reusable assessment links", () => {
     await expect(owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "adr-031-mid", level: "Mid", aiAssisted: true })).rejects.toThrow(/build/)
     await owner.mutation(api.assessments.create, { ...CONFIG, aiAssisted: true })
     await owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "disc-12-build", aiAssisted: true })
+    await expect(owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "disc-12-build" })).rejects.toThrow(/AI-assisted/)
     const { token } = await owner.mutation(api.assessments.create, CONFIG)
     await expect(t.mutation(api.assessments.join, { token, name: " " })).rejects.toThrow(/name/)
     await expect(t.mutation(api.assessments.join, { token, name: "A", email: "bad" })).rejects.toThrow(/valid email/)
@@ -70,5 +71,20 @@ describe("reusable assessment links", () => {
     const stranger = t.withIdentity({ subject: await seedUser(t, "stranger@else.com") })
     await expect(stranger.mutation(api.assessments.create, CONFIG)).rejects.toThrow(/access/)
     await expect(stranger.query(api.assessments.list, {})).rejects.toThrow(/access/)
+  })
+
+  it("AI-assisted off hides and blocks the agent chat (FR-R-20)", async () => {
+    const t = makeT()
+    const owner = await seedOwner(t)
+    const join = async (aiAssisted: boolean) => {
+      const { token } = await owner.mutation(api.assessments.create, { ...CONFIG, aiAssisted })
+      const { candidateToken } = await t.mutation(api.assessments.join, { token, name: "Ana" })
+      await t.mutation(api.candidates.start, { token: candidateToken })
+      return candidateToken
+    }
+    const off = await join(false)
+    expect(await t.query(api.candidates.session, { token: off })).toMatchObject({ aiAssisted: false })
+    await expect(t.action(api.builds.ask, { token: off, prompt: "why?" })).rejects.toThrow(/turned off/)
+    expect(await t.query(api.candidates.session, { token: await join(true) })).toMatchObject({ aiAssisted: true })
   })
 })

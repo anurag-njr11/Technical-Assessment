@@ -8,6 +8,7 @@ import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
 import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
 import { cn } from '@/lib/utils'
+import { downloadCsv } from '@/lib/csv'
 import { AssessmentLink } from '@/components/assessment-link'
 import siteMetadata from '@/metadata.json'
 
@@ -66,7 +67,7 @@ function Recruiter() {
         title="All submissions"
         description="Every attempt across your assessments."
         actions={
-          <button onClick={() => rows && downloadCsv(rows)} disabled={!rows?.length} className={btn.secondary}>
+          <button onClick={() => rows && exportDashboard(rows)} disabled={!rows?.length} className={btn.secondary}>
             <Download className="size-4" /> Export CSV
           </button>
         }
@@ -195,12 +196,16 @@ function AssessmentsPanel() {
   const [busy, setBusy] = useState(false)
   const [created, setCreated] = useState<{ id: string; token: string } | null>(null)
   const aiCapable = SCENARIOS[scenarioId]?.kind !== 'decision'
+  const aiRequired = SCENARIOS[scenarioId]?.kind === 'build'
+  const [roleFilter, setRoleFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const shown = assessments?.filter((a) => (!roleFilter || a.role === roleFilter) && (!statusFilter || a.status === statusFilter))
 
   const pickScenario = (id: string) => {
     setScenarioId(id)
     setMinutes(String(SCENARIOS[id].minutes))
     setLevel(levelOf(id))
-    setAiAssisted(SCENARIOS[id].kind === 'build')
+    setAiAssisted(SCENARIOS[id].kind !== 'decision')
   }
 
   const send = async (e: React.FormEvent) => {
@@ -208,7 +213,7 @@ function AssessmentsPanel() {
     setBusy(true)
     setError('')
     try {
-      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiCapable && aiAssisted }))
+      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiRequired || (aiCapable && aiAssisted) }))
     } catch (err) {
       setError(cleanError(err))
     } finally {
@@ -245,10 +250,14 @@ function AssessmentsPanel() {
             <input type="number" min={10} max={90} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={fieldCls} />
           </label>
           <label className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm sm:col-span-2 lg:col-span-3">
-            <input type="checkbox" className="accent-primary" checked={aiCapable && aiAssisted} disabled={!aiCapable} onChange={(e) => setAiAssisted(e.target.checked)} />
+            <input type="checkbox" className="accent-primary" checked={aiRequired || (aiCapable && aiAssisted)} disabled={!aiCapable || aiRequired} onChange={(e) => setAiAssisted(e.target.checked)} />
             <span className="font-medium">AI-assisted</span>
             <span className="text-xs text-muted-foreground">
-              {aiCapable ? 'Candidate works with an AI assistant; judges score the whole interaction.' : 'Not available for decision reviews.'}
+              {aiRequired
+                ? 'Always on for Build with AI modules.'
+                : aiCapable
+                  ? 'On: the candidate can question the AI agent; judges score the whole interaction. Off: no agent chat.'
+                  : 'Not available for decision reviews.'}
             </span>
           </label>
           <button type="submit" disabled={busy} className={cn(btn.primary, 'whitespace-nowrap')}>
@@ -266,7 +275,25 @@ function AssessmentsPanel() {
         ) : null}
       </Panel>
 
-      <Panel flush className="mt-5" title="Your assessments" description="Open one to see its candidates and compare them side by side.">
+      <Panel
+        flush
+        className="mt-5"
+        title="Your assessments"
+        description="Open one to see its candidates and compare them side by side."
+        actions={
+          <div className="flex gap-2">
+            <select aria-label="Filter by role" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className={fieldCls}>
+              <option value="">All roles</option>
+              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            </select>
+            <select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={fieldCls}>
+              <option value="">Any status</option>
+              <option value="active">Active</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+        }
+      >
       <div className="mt-4 overflow-x-auto border-t border-border">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
@@ -281,12 +308,12 @@ function AssessmentsPanel() {
             </tr>
           </thead>
           <tbody>
-            {assessments === undefined ? (
+            {shown === undefined ? (
               <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground"><Loader2 className="mx-auto size-5 animate-spin" /></td></tr>
-            ) : assessments.length === 0 ? (
-              <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground">No assessments yet. Create one above.</td></tr>
+            ) : shown.length === 0 ? (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground">{assessments?.length ? 'No assessments match these filters.' : 'No assessments yet. Create one above.'}</td></tr>
             ) : (
-              assessments.map((a) => (
+              shown.map((a) => (
                 <tr key={a._id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
                   <td className="px-6 py-4">
                     <Link to="/assessment" search={{ id: a._id }} className="font-semibold hover:text-primary hover:underline">{a.title}</Link>
@@ -550,21 +577,11 @@ function InvitePanel() {
   )
 }
 
-/** ATS-friendly export of the dashboard rows (webhook integrations: later). */
-function downloadCsv(rows: Array<Record<string, unknown>>) {
-  const cols = ['candidateName', 'scenarioId', 'level', 'status', 'overall', 'band', 'found', 'total', 'needsReview', 'reviewResolved', 'autoSubmitted', 'submittedAt']
-  const esc = (v: unknown) => {
-    const s = v === undefined || v === null ? '' : String(v)
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const lines = [cols.join(','), ...rows.map((r) => cols.map((c) => esc(c === 'submittedAt' ? new Date(r[c] as number).toISOString() : r[c])).join(','))]
-  const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `reviewbench-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
+const DASHBOARD_COLS = ['candidateName', 'scenarioId', 'level', 'status', 'overall', 'band', 'found', 'total', 'needsReview', 'reviewResolved', 'autoSubmitted', 'submittedAt']
+
+/** ATS-friendly export of the dashboard rows. */
+const exportDashboard = (rows: Array<Record<string, unknown>>) =>
+  downloadCsv('submissions', DASHBOARD_COLS, rows.map((r) => DASHBOARD_COLS.map((c) => (c === 'submittedAt' ? new Date(r[c] as number).toISOString() : r[c]))))
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: 'danger' }) {
   return (

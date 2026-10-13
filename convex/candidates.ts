@@ -35,6 +35,12 @@ async function baseMinutes(ctx: { db: QueryCtx["db"] }, c: Doc<"candidates">): P
   return a?.minutes ?? SCENARIO_META[c.scenarioId].minutes
 }
 
+/** FR-R-20: the agent chat / assistant is on unless the candidate joined an assessment with AI-assisted off. */
+export async function aiAllowed(ctx: { db: QueryCtx["db"] }, c: Doc<"candidates">): Promise<boolean> {
+  const a = c.assessmentId ? await ctx.db.get(c.assessmentId) : null
+  return a?.aiAssisted ?? true
+}
+
 /** Throws unless the attempt behind `token` is in progress and within time. */
 export async function requireActive(ctx: MutationCtx, token: string): Promise<Doc<"candidates">> {
   const c = await byToken(ctx, token)
@@ -161,6 +167,7 @@ export const session = query({
       status: c.status,
       minutes: (await baseMinutes(ctx, c)) + c.extraMinutes,
       extraMinutes: c.extraMinutes,
+      aiAssisted: await aiAllowed(ctx, c),
       deadline: c.deadline ?? null,
       graceMs: GRACE_MS,
       draft: draft

@@ -231,10 +231,10 @@ function Attempt({ token, session }: { token: string; session: Session }) {
         }
       />
       {step === 'intro' && (
-        <Intro name={session.name} minutes={session.minutes} extraMinutes={session.extraMinutes} onStart={begin} starting={starting} error={startError} />
+        <Intro aiAssisted={session.aiAssisted} name={session.name} minutes={session.minutes} extraMinutes={session.extraMinutes} onStart={begin} starting={starting} error={startError} />
       )}
       {step === 'review' && scenario.kind === 'code' && (
-        <Review token={token} chat={draft?.chat ?? []} comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
+        <Review aiAssisted={session.aiAssisted} token={token} chat={draft?.chat ?? []} comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
       )}
       {step === 'review' && scenario.kind === 'decision' && (
         <DecisionForm
@@ -355,6 +355,7 @@ function Timer({ deadline, onExpire }: { deadline: number; onExpire: () => void 
 }
 
 function Intro({
+  aiAssisted,
   name,
   minutes,
   extraMinutes,
@@ -362,6 +363,7 @@ function Intro({
   starting,
   error,
 }: {
+  aiAssisted: boolean
   name: string
   minutes: number
   extraMinutes: number
@@ -373,7 +375,7 @@ function Intro({
   const bullets = scenario.kind === 'decision' ? scenario.constraints : scenario.criteria
   const steps =
     scenario.kind === 'code'
-      ? ["Read the pull request and the agent's notes", 'Ask the agent about anything unclear', 'Comment on lines that need changes', 'Approve or request changes', 'Answer 3 short questions']
+      ? ["Read the pull request and the agent's notes", ...(aiAssisted ? ['Ask the agent about anything unclear'] : []), 'Comment on lines that need changes', 'Approve or request changes', 'Answer 3 short questions']
       : scenario.kind === 'decision'
         ? ['Read the context and the AI recommendation', 'Approve or reject it', 'Explain flawed assumptions and ignored risks', 'Propose what you would do instead']
         : ['Read the task', 'Write code with the AI assistant', 'Run the tests', 'Submit']
@@ -447,6 +449,7 @@ function Intro({
 }
 
 function Review({
+  aiAssisted,
   token,
   chat,
   comments,
@@ -455,6 +458,7 @@ function Review({
   setVerdict,
   onNext,
 }: {
+  aiAssisted: boolean
   token: string
   chat: Array<{ id: string; type: string; data: string }>
   comments: Comment[]
@@ -639,6 +643,7 @@ function Review({
       </section>
 
       <aside className="flex flex-col border-t border-border bg-card lg:w-96 lg:shrink-0 lg:border-l lg:border-t-0">
+        {aiAssisted ? (<>
         <div className="border-b border-border px-5 py-3">
           <h2 className="text-[15px] font-semibold tracking-tight">Ask the agent</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">The AI that wrote this pull request. Ask why it did something.</p>
@@ -651,6 +656,7 @@ function Review({
           emptyText="Not sure about a change? Ask the agent to explain it."
           className="lg:max-h-[55vh] lg:flex-1"
         />
+        </>) : null}
         <div className="border-t border-border p-5">
         <h2 className="text-[15px] font-semibold tracking-tight">Verdict</h2>
         <p className="mt-1 text-xs text-muted-foreground">Would you merge this PR as-is?</p>
