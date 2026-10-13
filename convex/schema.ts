@@ -472,6 +472,32 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
   }).index("by_kind", ["kind", "startedAt"]),
 
+  // REL-8: the slice of each machine result the reliability dashboard needs
+  // (see dashboard.slim), so it can cover thousands of submissions.
+  metricRows: defineTable({
+    submissionId: v.id("submissions"),
+    scenarioId: v.string(),
+    submittedAt: v.number(),
+    machine: v.object({
+      overall: v.number(),
+      components: v.record(v.string(), v.object({ value: v.number() })),
+      weights: v.record(v.string(), v.number()),
+      needsReview: v.boolean(),
+      gradedAt: v.number(),
+      callCount: v.optional(v.number()),
+      items: v.array(v.object({
+        id: v.string(),
+        kind: v.union(v.literal("issue"), v.literal("decoy")),
+        outcome: outcomeValidator,
+        explanation: v.union(v.number(), v.null()),
+        votes: v.array(v.object({ model: v.string(), decision: v.boolean(), valid: v.boolean() })),
+      })),
+      extraVotes: v.array(v.object({ model: v.string(), valid: v.boolean(), discardedReason: v.optional(v.string()) })),
+    }),
+  })
+    .index("by_submission", ["submissionId"])
+    .index("by_submittedAt", ["submittedAt"]),
+
   // §21.2: cached judge replies (see judges.liveAsker); purged after 30 days.
   judgeCache: defineTable({
     key: v.string(),

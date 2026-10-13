@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { api } from "../../convex/_generated/api"
+import { api, internal } from "../../convex/_generated/api"
 import { ANSWER_KEYS } from "../../convex/answerKey"
 import { ADVERSARIAL_CASES, PERTURBATIONS } from "../../convex/evaluation"
 import { gradeSubmission } from "../../convex/grading"
@@ -124,5 +124,20 @@ describe("evaluation runs and the reliability dashboard", () => {
     await runToCompletion(t)
     const d = await owner.query(api.reliability.dashboard, {})
     expect(d.recent[0]).toMatchObject({ kind: "retest", status: "error" })
+  })
+})
+
+describe("REL-8 metric rows", () => {
+  it("are written at grading time, rebuilt by the backfill, and removed with the submission", async () => {
+    const t = makeT()
+    const { sub, owner } = await submitAndGrade(t, [])
+    const rows = () => t.run(async (ctx) => (await ctx.db.query("metricRows").collect()).length)
+    expect(await rows()).toBe(1)
+    await t.run(async (ctx) => { for (const r of await ctx.db.query("metricRows").collect()) await ctx.db.delete(r._id) })
+    expect((await owner.query(api.reliability.dashboard, {})).counts.graded).toBe(0)
+    await t.mutation(internal.reliability.backfillMetricRows, {})
+    expect((await owner.query(api.reliability.dashboard, {})).counts.graded).toBe(1)
+    await owner.mutation(api.submissions.remove, { id: sub._id })
+    expect(await rows()).toBe(0)
   })
 })

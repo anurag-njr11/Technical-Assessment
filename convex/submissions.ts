@@ -15,6 +15,7 @@ import { requireActive } from "./candidates"
 import { LIMITS, hit } from "./rateLimit"
 import { applyOverrides } from "./scoring"
 import { PAUSED } from "./judges"
+import { slim } from "./dashboard"
 import type { Override, Result } from "./scoring"
 
 // FR-C-18 server limits.
@@ -217,7 +218,7 @@ export const retryPaused = mutation({
 export async function deleteSubmission(ctx: MutationCtx, id: Id<"submissions">) {
   const row = await ctx.db.get(id)
   if (!row) return
-  for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes"] as const) {
+  for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes", "metricRows"] as const) {
     const rows = await ctx.db
       .query(table)
       .withIndex("by_submission", (q) => q.eq("submissionId", id))
@@ -290,6 +291,17 @@ export function effectiveResult(sub: Doc<"submissions">, machine: Result, overri
   })
 }
 
+/** REL-8: upserts the dashboard's slim copy of a graded submission's machine result. Returns true when added. */
+export async function writeMetricRow(ctx: MutationCtx, s: Doc<"submissions">): Promise<boolean> {
+  const machine = s.machineResult ?? s.result
+  if (!machine) return false
+  const row = { submissionId: s._id, scenarioId: s.scenarioId, submittedAt: s.submittedAt, machine: slim(machine) }
+  const existing = await ctx.db.query("metricRows").withIndex("by_submission", (q) => q.eq("submissionId", s._id)).unique()
+  if (existing) await ctx.db.replace(existing._id, row)
+  else await ctx.db.insert("metricRows", row)
+  return !existing
+}
+
 export const saveResult = internalMutation({
   args: { id: v.id("submissions"), result: resultValidator },
   handler: async (ctx, args) => {
@@ -303,6 +315,7 @@ export const saveResult = internalMutation({
       result: effectiveResult(sub, args.result, overrides),
       error: undefined,
     })
+    await writeMetricRow(ctx, { ...sub, machineResult: args.result })
     if (process.env.WEBHOOK_URL) await ctx.scheduler.runAfter(0, internal.webhooks.graded, { submissionId: args.id })
   },
 })

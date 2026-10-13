@@ -6,6 +6,7 @@ import { internal } from "./_generated/api"
 import { requireOwner, requireRecruiter } from "./access"
 import { ANSWER_KEYS } from "./answerKey"
 import { gradeSubmission } from "./grading"
+import { writeMetricRow } from "./submissions"
 import { PROMPT_VERSION, RUBRIC_VERSION, callModel, getPanel, liveAsker } from "./judges"
 import type { Trace } from "./judges"
 import { SCORING_VERSION, itemOrdinal } from "./scoring"
@@ -151,6 +152,20 @@ async function rewrite(text: string): Promise<string> {
   }
 }
 
+/** One-off for results graded before metricRows existed: `npx convex run reliability:backfillMetricRows`. */
+export const backfillMetricRows = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("submissions").paginate({ cursor: args.cursor ?? null, numItems: 50 })
+    let added = 0
+    for (const s of page.page) {
+      if (s.status === "graded" && (s.machineResult ?? s.result)) added += Number(await writeMetricRow(ctx, s))
+    }
+    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.reliability.backfillMetricRows, { cursor: page.continueCursor })
+    return added
+  },
+})
+
 export const step = internalAction({
   args: { runId: v.id("evalRuns"), index: v.number() },
   handler: async (ctx, args) => {
@@ -203,12 +218,9 @@ export const dashboard = query({
   args: {},
   handler: async (ctx) => {
     await requireRecruiter(ctx)
-    // Bounded to stay well inside Convex per-query read limits (~20 KB per result).
-    // Beyond a few hundred graded submissions, move these metrics to incremental aggregates.
-    const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)
-    const subs = rows
-      .filter((r) => r.status === "graded" && (r.machineResult ?? r.result))
-      .map((r) => ({ _id: r._id as string, scenarioId: r.scenarioId, submittedAt: r.submittedAt, machine: (r.machineResult ?? r.result)! }))
+    // Slim rows (~2 KB each, written at grading time) keep this inside per-query read limits.
+    const rows = await ctx.db.query("metricRows").withIndex("by_submittedAt").order("desc").take(2000)
+    const subs = rows.map((r) => ({ _id: r.submissionId as string, scenarioId: r.scenarioId, submittedAt: r.submittedAt, machine: r.machine }))
     const labels = (await ctx.db.query("goldenLabels").take(8000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
     const runs = await ctx.db.query("evalRuns").order("desc").take(200)
     const data = buildDashboard(subs, labels as any, runs)
