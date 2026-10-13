@@ -72,6 +72,12 @@ export function buildTask(scenarioId: string): string {
       "Diff:", ...diff, "Your rationale:", s.rationale, "Your reasoning behind the changes:", ...s.assumptions.map((a) => `- ${a}`),
     ].join("\n")
   }
+  if (s?.kind === "decision") {
+    return [
+      `${s.ticketId}: ${s.title}`, s.summary, "Context:", ...s.context.map((c) => `- ${c}`), "Constraints:", ...s.constraints.map((c) => `- ${c}`),
+      "Your recommendation:", ...s.recommendation.map((r) => `- ${r}`), "Your rationale:", s.rationale, "Your assumptions:", ...s.assumptions.map((a) => `- ${a}`),
+    ].join("\n")
+  }
   return ""
 }
 

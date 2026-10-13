@@ -211,11 +211,10 @@ function AssessmentsPanel() {
   const [scenarioId, setScenarioId] = useState(DEFAULT_SCENARIO.id)
   const [level, setLevel] = useState(levelOf(DEFAULT_SCENARIO.id))
   const [minutes, setMinutes] = useState(String(DEFAULT_SCENARIO.minutes))
-  const [aiAssisted, setAiAssisted] = useState(DEFAULT_SCENARIO.kind !== 'decision')
+  const [aiAssisted, setAiAssisted] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [created, setCreated] = useState<{ id: string; token: string } | null>(null)
-  const aiCapable = SCENARIOS[scenarioId]?.kind !== 'decision'
   const aiRequired = SCENARIOS[scenarioId]?.kind === 'build'
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -225,7 +224,7 @@ function AssessmentsPanel() {
     setScenarioId(id)
     setMinutes(String(SCENARIOS[id].minutes))
     setLevel(levelOf(id))
-    setAiAssisted(SCENARIOS[id].kind !== 'decision')
+    setAiAssisted(true)
   }
 
   const send = async (e: React.FormEvent) => {
@@ -233,7 +232,7 @@ function AssessmentsPanel() {
     setBusy(true)
     setError('')
     try {
-      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiRequired || (aiCapable && aiAssisted) }))
+      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiRequired || aiAssisted }))
     } catch (err) {
       setError(cleanError(err))
     } finally {
@@ -270,14 +269,12 @@ function AssessmentsPanel() {
             <input type="number" min={10} max={90} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={fieldCls} />
           </label>
           <label className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm sm:col-span-2 lg:col-span-3">
-            <input type="checkbox" className="accent-primary" checked={aiRequired || (aiCapable && aiAssisted)} disabled={!aiCapable || aiRequired} onChange={(e) => setAiAssisted(e.target.checked)} />
+            <input type="checkbox" className="accent-primary" checked={aiRequired || aiAssisted} disabled={aiRequired} onChange={(e) => setAiAssisted(e.target.checked)} />
             <span className="font-medium">AI-assisted</span>
             <span className="text-xs text-muted-foreground">
               {aiRequired
                 ? 'Always on for Build with AI modules.'
-                : aiCapable
-                  ? 'On: the candidate can question the AI agent; judges score the whole interaction. Off: no agent chat.'
-                  : 'Not available for decision reviews.'}
+                : 'On: the candidate can question the AI agent; judges score the whole interaction. Off: no agent chat.'}
             </span>
           </label>
           <button type="submit" disabled={busy} className={cn(btn.primary, 'whitespace-nowrap')}>

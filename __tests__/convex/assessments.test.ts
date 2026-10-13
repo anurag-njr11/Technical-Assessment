@@ -54,7 +54,7 @@ describe("reusable assessment links", () => {
     await expect(owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "nope" })).rejects.toThrow(/Unknown scenario/)
     await expect(owner.mutation(api.assessments.create, { ...CONFIG, minutes: 5 })).rejects.toThrow(/between 10 and 90/)
     await expect(owner.mutation(api.assessments.create, { ...CONFIG, level: "Staff" })).rejects.toThrow(/Level/)
-    await expect(owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "adr-031-mid", level: "Mid", aiAssisted: true })).rejects.toThrow(/build/)
+    await owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "adr-031-mid", level: "Mid", aiAssisted: true })
     await owner.mutation(api.assessments.create, { ...CONFIG, aiAssisted: true })
     await owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "disc-12-build", aiAssisted: true })
     await expect(owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "disc-12-build" })).rejects.toThrow(/AI-assisted/)

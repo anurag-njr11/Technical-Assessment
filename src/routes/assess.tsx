@@ -238,6 +238,9 @@ function Attempt({ token, session }: { token: string; session: Session }) {
       )}
       {step === 'review' && scenario.kind === 'decision' && (
         <DecisionForm
+          token={token}
+          aiAssisted={session.aiAssisted}
+          chat={draft?.chat ?? []}
           scenario={scenario}
           verdict={verdict}
           setVerdict={setVerdict}
@@ -377,7 +380,7 @@ function Intro({
     scenario.kind === 'code'
       ? ["Read the pull request and the agent's notes", ...(aiAssisted ? ['Ask the agent about anything unclear'] : []), 'Comment on lines that need changes', 'Approve or request changes', 'Answer 3 short questions']
       : scenario.kind === 'decision'
-        ? ['Read the context and the AI recommendation', 'Approve or reject it', 'Explain flawed assumptions and ignored risks', 'Propose what you would do instead']
+        ? ['Read the context and the AI recommendation', ...(aiAssisted ? ['Question the agent about its claims'] : []), 'Approve or reject it', 'Explain flawed assumptions and ignored risks', 'Propose what you would do instead']
         : ['Read the task', 'Write code with the AI assistant', 'Run the tests', 'Submit']
   const note =
     scenario.kind === 'code'
@@ -779,6 +782,9 @@ function Done({ name, token, groupToken }: { name?: string; token: string; group
 }
 
 function DecisionForm({
+  token,
+  aiAssisted,
+  chat,
   scenario,
   verdict,
   setVerdict,
@@ -788,6 +794,9 @@ function DecisionForm({
   submitting,
   error,
 }: {
+  token: string
+  aiAssisted: boolean
+  chat: Array<{ id: string; type: string; data: string }>
   scenario: DecisionScenario
   verdict: Verdict | null
   setVerdict: (v: Verdict) => void
@@ -798,6 +807,7 @@ function DecisionForm({
   error: string
 }) {
   const [localError, setLocalError] = useState('')
+  const [prompt, setPrompt] = useState('')
   const trySubmit = () => {
     if (!verdict) return setLocalError('Approve or reject the recommendation first.')
     if (answers.some((a) => !a.trim())) return setLocalError('Fill in all three sections (a few sentences each is enough).')
@@ -830,7 +840,21 @@ function DecisionForm({
               </li>
             ))}
           </ol>
+          <h3 className="mt-5 text-sm font-semibold">The agent's notes</h3>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/80">{scenario.rationale}</p>
+          <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/80">
+            {scenario.assumptions.map((a) => <li key={a}>{a}</li>)}
+          </ul>
         </div>
+        {aiAssisted ? (
+          <div className="flex flex-col rounded-xl border border-border bg-card">
+            <div className="border-b border-border px-5 py-3">
+              <h2 className="text-[15px] font-semibold tracking-tight">Ask the agent</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">The AI that wrote this recommendation. Ask it to justify a claim.</p>
+            </div>
+            <AssistantChat token={token} chat={chat} prompt={prompt} setPrompt={setPrompt} emptyText="Not sure about a claim? Ask the agent where it comes from." className="max-h-[55vh]" />
+          </div>
+        ) : null}
       </section>
       <section className="rounded-xl border border-border bg-card p-6">
         <h2 className="text-[15px] font-semibold tracking-tight">Your decision</h2>

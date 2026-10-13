@@ -58,7 +58,6 @@ export const create = mutation({
     if (!Number.isInteger(args.minutes) || args.minutes < 10 || args.minutes > 90) {
       throw new Error("Time limit must be a whole number of minutes between 10 and 90.")
     }
-    if (args.aiAssisted && meta.kind === "decision") throw new Error("AI-assisted mode needs a code review or build module.")
     if (!args.aiAssisted && meta.kind === "build") throw new Error("Build with AI modules need AI-assisted mode on.")
     const title = args.title?.trim().slice(0, 120) || `${args.role} · ${meta.title}`
     const token = newToken()

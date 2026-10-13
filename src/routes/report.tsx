@@ -183,7 +183,7 @@ function Report() {
 
           {result ? (
             <>
-              {scenario?.kind === 'code' && scenario.assumptions?.length ? <AgentPR scenario={scenario} findings={result.trajectory?.findings ?? []} /> : null}
+              {scenario && scenario.kind !== 'build' && scenario.assumptions?.length ? <AgentPR scenario={scenario} findings={result.trajectory?.findings ?? []} /> : null}
               {result.trajectory ? (
                 <EvidenceReport trajectory={result.trajectory} overall={result.overall} band={result.band} code={sub.build?.code} events={sub.build?.events} submissionId={sub._id} />
               ) : null}

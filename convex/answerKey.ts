@@ -114,6 +114,15 @@ export const ASSUMPTION_KEYS: Record<string, Array<{ flawed: boolean; itemId: st
     { flawed: true, itemId: "I4" },
     { flawed: false, itemId: "D1" },
   ],
+  "adr-031-mid": [
+    { flawed: true, itemId: "F1" },
+    { flawed: true, itemId: "F2" },
+    { flawed: true, itemId: "F3" },
+    { flawed: true, itemId: "F4" },
+    { flawed: true, itemId: "F5" },
+    { flawed: false, itemId: "D1" },
+    { flawed: false, itemId: "D2" },
+  ],
   "pay-217-mid": [
     { flawed: true, itemId: "I3" },
     { flawed: true, itemId: "I1" },

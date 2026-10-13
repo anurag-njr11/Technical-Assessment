@@ -5,7 +5,7 @@ import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { cleanError } from '@/components/rb'
 import { cn } from '@/lib/utils'
-import type { Scenario } from '@/lib/scenario'
+import type { DecisionScenario, Scenario } from '@/lib/scenario'
 
 // M3 evidence-first report: judge findings that cite trajectory events, and the
 // interaction timeline those citations point into.
@@ -216,11 +216,11 @@ function FindingOverride({ f, submissionId, onDone }: { f: Finding; submissionId
  * assumptions. An assumption is marked challenged when a detected
  * challengeAssumptions finding has id `A<n>` (1-based, scenario order).
  */
-export function AgentPR({ scenario, findings }: { scenario: Scenario; findings: Finding[] }) {
+export function AgentPR({ scenario, findings }: { scenario: Scenario | DecisionScenario; findings: Finding[] }) {
   const challenges = findings.filter((f) => f.dimension === 'challengeAssumptions')
   return (
     <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-[15px] font-semibold tracking-tight">AI-generated PR · {scenario.ticketId} {scenario.title}</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">{scenario.kind === 'code' ? 'AI-generated PR' : 'AI recommendation'} · {scenario.ticketId} {scenario.title}</h2>
       <p className="mt-2 text-sm"><span className="font-semibold">Agent rationale: </span><span className="text-muted-foreground">{scenario.rationale}</span></p>
       <h3 className="mt-4 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">Agent assumptions</h3>
       <ol className="mt-2 space-y-1.5 text-sm">
@@ -239,7 +239,7 @@ export function AgentPR({ scenario, findings }: { scenario: Scenario; findings: 
           )
         })}
       </ol>
-      <details className="mt-4">
+      {scenario.kind === 'code' ? <details className="mt-4">
         <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Show diff ({scenario.files.length} files)</summary>
         {scenario.files.map((file) => (
           <div key={file.path} className="mt-3">
@@ -253,7 +253,7 @@ export function AgentPR({ scenario, findings }: { scenario: Scenario; findings: 
             </pre>
           </div>
         ))}
-      </details>
+      </details> : null}
     </section>
   )
 }

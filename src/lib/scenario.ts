@@ -244,6 +244,9 @@ export type DecisionScenario = {
   context: string[]
   constraints: string[]
   recommendation: string[]
+  /** The AI agent's notes behind the recommendation; some assumptions are wrong on purpose. */
+  rationale: string
+  assumptions: string[]
   followUps: string[]
 }
 
@@ -278,6 +281,17 @@ export const ADR_031: DecisionScenario = {
     'As part of the work, add a composite index on orders(customer_id, created_at) for the history query.',
     'Move orders older than 7 years to cold storage, as the retention policy allows.',
     'Expected result: order-history p95 under 60 ms.',
+  ],
+  rationale:
+    'The order-history page is slow because PostgreSQL has to join orders, customers and invoices on every request. A document store keeps each order in one place, so the read is a single lookup.',
+  assumptions: [
+    "The vendor's 3x benchmark reflects our order-history workload.",
+    'Nothing outside the Orders service reads its database, so changing the datastore only affects this service.',
+    'The team can run MongoDB in production without extra cost, training or hiring.',
+    'A one-off export and import over a weekend is enough to move the data.',
+    'The joins are what make the history page slow.',
+    "A composite index on orders(customer_id, created_at) matches the history query's filter and sort.",
+    'Orders older than 7 years can be moved to cold storage under the retention policy.',
   ],
   followUps: [
     'Which claims or assumptions in the recommendation are flawed, and why?',

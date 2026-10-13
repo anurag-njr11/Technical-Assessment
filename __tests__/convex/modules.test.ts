@@ -25,6 +25,8 @@ describe("M2 Decision Review", () => {
     const t = makeT()
     const { token } = await inviteTo(t, "adr-031-mid")
     await expect(t.mutation(api.submissions.submit, { token, comments: [], answers: ["a", "b", "c"] })).rejects.toThrow(/verdict/)
+    const reply = await t.action(api.builds.ask, { token, prompt: "Where does the 3x benchmark come from?" })
+    expect(reply.text).not.toBe("")
     await t.mutation(api.submissions.submit, { token, verdict: "request_changes", comments: [], answers: ["The benchmark is irrelevant.", "Finance reports break.", "Profile first."] })
     const sub = await graded(t)
     expect(sub.status).toBe("graded")
@@ -32,6 +34,9 @@ describe("M2 Decision Review", () => {
     expect(sub.comments[0].text).toContain("Finance reports break.")
     expect(sub.result!.items.map((i) => i.id)).toEqual(["F1", "F2", "F3", "F4", "F5", "D1", "D2"])
     expect(sub.result!.components.verdict.value).toBe(1)
+    // The agent chat and its notes feed the trajectory council (A1..A7 = the agent's assumptions).
+    expect(sub.build!.events.map((e) => e.type)).toEqual(["ai_prompt", "ai_response"])
+    expect(sub.result!.trajectory!.findings.filter((f) => f.dimension === "challengeAssumptions").map((f) => f.id)).toEqual(["A1", "A2", "A3", "A4", "A5", "A6", "A7"])
   })
 })
 
@@ -148,7 +153,7 @@ describe("PR-author chat on code reviews", () => {
 
   it("every stated assumption has a server-side key", () => {
     for (const s of Object.values(SCENARIOS)) {
-      if (s.kind === "code") expect(ASSUMPTION_KEYS[s.id], s.id).toHaveLength(s.assumptions.length)
+      if (s.kind !== "build") expect(ASSUMPTION_KEYS[s.id], s.id).toHaveLength(s.assumptions.length)
     }
     for (const [id, keys] of Object.entries(ASSUMPTION_KEYS)) {
       const items = ANSWER_KEYS[id].items
