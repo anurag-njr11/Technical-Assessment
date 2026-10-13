@@ -1,12 +1,12 @@
 import { v } from "convex/values"
-import { action, internalMutation, mutation } from "./_generated/server"
+import { action, internalMutation, mutation, query } from "./_generated/server"
 import type { MutationCtx } from "./_generated/server"
 import type { Doc } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
 import { SCENARIO_META } from "./answerKey"
 import { assistantReply, buildTask } from "./buildScenario"
 import type { BuildEvent } from "./buildScenario"
-import { aiAllowed, requireActive } from "./candidates"
+import { aiAllowed, byToken, requireActive } from "./candidates"
 import { callModel, redact } from "./judges"
 import { hit } from "./rateLimit"
 
@@ -92,6 +92,26 @@ export const prepareAsk = internalMutation({
   },
 })
 
+export const setPartial = internalMutation({
+  args: { token: v.string(), text: v.string() },
+  handler: async (ctx, args) => {
+    const c = await requireActive(ctx, args.token)
+    const draft = await draftFor(ctx, c)
+    await ctx.db.patch(draft._id, { pendingReply: args.text ? args.text.slice(0, 4000) : undefined })
+  },
+})
+
+/** Public: the reply streaming in right now for this attempt ("" when none). */
+export const partial = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const c = await byToken(ctx, args.token)
+    if (!c || c.status !== "started") return ""
+    const draft = await ctx.db.query("autosaves").withIndex("by_candidate", (q) => q.eq("candidateId", c._id)).unique()
+    return draft?.pendingReply ?? ""
+  },
+})
+
 export const recordAsk = internalMutation({
   args: {
     token: v.string(),
@@ -113,7 +133,7 @@ export const recordAsk = internalMutation({
     const responseEv = { id: eventId(events.length + 1), t, type: "ai_response" as const, data: JSON.stringify({ text: args.text, code: args.code, ...(args.model ? { model: args.model } : {}) }), tokens: args.tokens }
     const added: BuildEvent[] = [promptEv, responseEv]
     if (args.fault) added.push({ id: eventId(events.length + 2), t, type: "fault_injected", data: `${args.fault}|${responseEv.id}` })
-    await ctx.db.patch(draft._id, { events: [...events, ...added] as Doc<"autosaves">["events"], updatedAt: Date.now() })
+    await ctx.db.patch(draft._id, { events: [...events, ...added] as Doc<"autosaves">["events"], pendingReply: undefined, updatedAt: Date.now() })
     return { id: responseEv.id, text: args.text, code: args.code }
   },
 })
@@ -143,8 +163,15 @@ export const ask = action({
       const code = build ? `<current_code>\n${p.code}\n</current_code>\n\n` : ""
       const user = `<task>\n${buildTask(p.scenarioId)}\n</task>\n\n<conversation>\n${p.history}\n</conversation>\n\n${code}<request>\n${p.prompt}\n</request>`
       const usage = { input: 0, output: 0 }
+      // Stream the reply into the draft (at most ~3 writes a second) so the chat shows it as it arrives.
+      let last = 0
+      const onText = async (soFar: string) => {
+        if (Date.now() - last < 300) return
+        last = Date.now()
+        await ctx.runMutation(internal.builds.setPartial, { token: args.token, text: soFar })
+      }
       try {
-        const raw = await callModel({ model, family: "assistant" }, user, build ? ASSISTANT_SYSTEM : AUTHOR_SYSTEM, usage)
+        const raw = await callModel({ model, family: "assistant" }, user, build ? ASSISTANT_SYSTEM : AUTHOR_SYSTEM, usage, onText)
         const out = build ? splitReply(raw) : { text: raw.trim().slice(0, 3000), code: "" }
         if (out.text || out.code) {
           reply = out
@@ -156,7 +183,10 @@ export const ask = action({
         // builds: scripted reply stands; reviews: handled below
       }
     }
-    if (!reply.text && !reply.code) throw new Error("The agent didn't reply this time. Please try again.")
+    if (!reply.text && !reply.code) {
+      await ctx.runMutation(internal.builds.setPartial, { token: args.token, text: "" })
+      throw new Error("The agent didn't reply this time. Please try again.")
+    }
     return await ctx.runMutation(internal.builds.recordAsk, { token: args.token, prompt, ...reply, fault: scripted.fault, tokens, model })
   },
 })

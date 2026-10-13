@@ -373,6 +373,8 @@ export default defineSchema({
     answers: v.array(v.string()),
     code: v.optional(v.string()),
     events: v.optional(v.array(buildEventValidator)),
+    // The agent reply being streamed right now (cleared when it is recorded).
+    pendingReply: v.optional(v.string()),
     updatedAt: v.number(),
   }).index("by_candidate", ["candidateId"]),
 

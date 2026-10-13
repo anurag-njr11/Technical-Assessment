@@ -152,6 +152,34 @@ describe("PR-author chat on code reviews", () => {
     expect(sub.build!.events.some((e) => e.type === "fault_injected")).toBe(false)
   })
 
+  it("streams the agent's reply into the draft and records the full text and usage", async () => {
+    const t = makeT()
+    const { token } = await inviteTo(t, "pay-217-mid")
+    const frames = ["Because ", "require_auth ", "covers it."].map((c) => `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`)
+    frames.push(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 700, completion_tokens: 9 } })}\n\ndata: [DONE]\n\n`)
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: { body: string }) => {
+      expect(JSON.parse(init.body).stream).toBe(true)
+      const enc = new TextEncoder()
+      const body = new ReadableStream({
+        async start(ctrl) {
+          for (const f of frames) {
+            ctrl.enqueue(enc.encode(f))
+            vi.advanceTimersByTime(400) // let the 300 ms write throttle pass
+            await Promise.resolve()
+          }
+          ctrl.close()
+        },
+      })
+      return new Response(body, { headers: { "content-type": "text/event-stream" } })
+    }))
+    const reply = await t.action(api.builds.ask, { token, prompt: "Who checks the caller owns the payment?" })
+    expect(reply.text).toBe("Because require_auth covers it.")
+    const draft = (await t.run(async (ctx) => ctx.db.query("autosaves").first()))!
+    expect(draft.pendingReply).toBeUndefined()
+    expect(draft.events!.find((e) => e.type === "ai_response")!.tokens).toEqual({ input: 700, output: 9 })
+    expect(await t.query(api.builds.partial, { token })).toBe("")
+  })
+
   it("every stated assumption has a server-side key", () => {
     for (const s of Object.values(SCENARIOS)) {
       if (s.kind !== "build") expect(ASSUMPTION_KEYS[s.id], s.id).toHaveLength(s.assumptions.length)

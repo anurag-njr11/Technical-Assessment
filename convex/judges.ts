@@ -89,19 +89,23 @@ export const creditsExhausted = (traces: Trace[]) =>
 
 export type Asker = (judge: Judge, prompt: string, stage: string) => Promise<JudgeAnswer>
 
-/**
- * Any OpenAI-compatible chat endpoint: OpenRouter (default, serves every panel
- * model with one key), Ollama (`http://localhost:11434/v1`), Groq, Together...
- */
 /** Judges answer in short JSON; the agent replies in a few sentences plus one code block. */
 const MAX_TOKENS = 800
 
+type Usage = { prompt_tokens?: number; completion_tokens?: number }
+
+/**
+ * Any OpenAI-compatible chat endpoint: OpenRouter (default, serves every panel
+ * model with one key), Ollama (`http://localhost:11434/v1`), Groq, Together...
+ * With `onText`, the reply is streamed and onText gets the text so far.
+ */
 export async function callModel(
   ref: ModelRef,
   prompt: string,
   system = SYSTEM,
   /** Filled with the provider's reported token usage, when given. */
   usage?: { input: number; output: number },
+  onText?: (soFar: string) => Promise<void> | void,
 ): Promise<string> {
   const baseUrl = (process.env.LLM_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "")
   const key = process.env.LLM_API_KEY
@@ -113,6 +117,7 @@ export async function callModel(
       temperature: 0,
       // Without a cap, OpenRouter reserves the model's full output budget and returns 402 on low balances.
       max_tokens: MAX_TOKENS,
+      ...(onText ? { stream: true, stream_options: { include_usage: true } } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
@@ -121,9 +126,17 @@ export async function callModel(
   })
   if (response.status === 402) throw new Error(CREDITS_ERROR)
   if (!response.ok) throw new Error(`Model request failed (${response.status}).`)
+  if (onText && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
+    const text = await readStream(response.body, onText, usage)
+    if (usage && !usage.output) {
+      usage.input = Math.ceil((system.length + prompt.length) / 4)
+      usage.output = Math.ceil(text.length / 4)
+    }
+    return text
+  }
   const res = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>
-    usage?: { prompt_tokens?: number; completion_tokens?: number }
+    usage?: Usage
   }
   if (usage) {
     usage.input = res.usage?.prompt_tokens ?? Math.ceil((system.length + prompt.length) / 4)
@@ -138,6 +151,39 @@ export type JudgeCache = { get: (key: string) => Promise<string | null>; put: (k
 async function sha256(s: string) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
   return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+/** Reads an OpenAI-style SSE stream ("data: {...}" lines, "data: [DONE]"). */
+async function readStream(body: ReadableStream<Uint8Array>, onText: (soFar: string) => Promise<void> | void, usage?: { input: number; output: number }) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ""
+  let text = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const lines = buf.split("\n")
+    buf = lines.pop() ?? ""
+    let grew = false
+    for (const line of lines) {
+      const data = line.startsWith("data:") ? line.slice(5).trim() : ""
+      if (!data || data === "[DONE]") continue
+      try {
+        const j = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }>; usage?: Usage }
+        const piece = j.choices?.[0]?.delta?.content ?? ""
+        if (piece) { text += piece; grew = true }
+        if (j.usage && usage) {
+          usage.input = j.usage.prompt_tokens ?? usage.input
+          usage.output = j.usage.completion_tokens ?? usage.output
+        }
+      } catch {
+        // keep-alive comments and partial frames
+      }
+    }
+    if (grew) await onText(text)
+  }
+  return text
 }
 
 /**

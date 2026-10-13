@@ -4,7 +4,7 @@ import { DISC_12 } from "@/lib/scenario"
 import { interviewQuestions } from "@/lib/interview"
 
 const log = vi.fn(async () => undefined)
-vi.mock("convex/react", () => ({ useMutation: () => log, useAction: () => vi.fn(async () => undefined) }))
+vi.mock("convex/react", () => ({ useMutation: () => log, useAction: () => vi.fn(async () => undefined), useQuery: () => undefined }))
 
 describe("Directed Build workspace", () => {
   it("renders the ticket, editor, restored chat and lets the candidate insert a suggestion", async () => {

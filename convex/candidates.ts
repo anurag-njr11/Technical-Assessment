@@ -22,7 +22,7 @@ export function newToken(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
 }
 
-async function byToken(ctx: { db: QueryCtx["db"] }, token: string): Promise<Doc<"candidates"> | null> {
+export async function byToken(ctx: { db: QueryCtx["db"] }, token: string): Promise<Doc<"candidates"> | null> {
   if (!/^[0-9a-f]{48}$/.test(token)) return null
   return await ctx.db
     .query("candidates")

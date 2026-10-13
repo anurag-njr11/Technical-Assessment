@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useAction, useMutation } from 'convex/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
 import { ArrowRight, Check, Loader2, Play, Plus, Send, X } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { BuildScenario } from '@/lib/scenario'
@@ -126,6 +126,7 @@ export function AssistantChat({
   const log = useMutation(api.builds.log)
   const [messages, setMessages] = useState<Msg[]>(() => fromChat(chat))
   const [pending, setPending] = useState('')
+  const partial = useQuery(api.builds.partial, pending ? { token } : 'skip')
   const [error, setError] = useState('')
   const chatEnd = useRef<HTMLDivElement>(null)
   const scroll = () => setTimeout(() => chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
@@ -183,9 +184,15 @@ export function AssistantChat({
         {pending ? (
           <>
             <div className="ml-8 rounded-lg bg-primary p-3 text-sm text-primary-foreground"><p className="whitespace-pre-wrap">{pending}</p></div>
-            <div className="mr-4 inline-flex items-center gap-2 rounded-lg border border-border bg-background p-3 text-sm text-muted-foreground" role="status">
-              <Loader2 className="size-4 animate-spin" /> Thinking…
-            </div>
+            {partial ? (
+              <div className="mr-4 rounded-lg border border-border bg-background p-3 text-sm" aria-live="polite">
+                <p className="whitespace-pre-wrap">{partial}</p>
+              </div>
+            ) : (
+              <div className="mr-4 inline-flex items-center gap-2 rounded-lg border border-border bg-background p-3 text-sm text-muted-foreground" role="status">
+                <Loader2 className="size-4 animate-spin" /> Thinking…
+              </div>
+            )}
           </>
         ) : null}
         <div ref={chatEnd} />
