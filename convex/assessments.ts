@@ -6,6 +6,8 @@ import { SCENARIO_META } from "./answerKey"
 import { requireRecruiter } from "./access"
 import { hit } from "./rateLimit"
 import { newToken } from "./candidates"
+import { internal } from "./_generated/api"
+import { siteUrl } from "./email"
 
 // One reusable link / QR per role config. Each visitor who joins gets their
 // own `candidates` row and token, then continues the normal /assess flow.
@@ -14,6 +16,10 @@ export const ROLES = ["AI Engineer", "Software Engineer", "Backend Engineer", "M
 const LEVELS = ["Junior", "Mid", "Senior"]
 /** Joins allowed per assessment link per hour. */
 const JOINS_PER_HOUR = 200
+/** A joined link must be started within this many days. */
+export const JOIN_EXPIRY_DAYS = 7
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 async function byToken(ctx: { db: QueryCtx["db"] }, token: string): Promise<Doc<"assessments"> | null> {
   if (!/^[0-9a-f]{48}$/.test(token)) return null
@@ -131,6 +137,35 @@ export const get = query({
   },
 })
 
+/** Emails the shared assessment link to a list of candidates. */
+export const emailLink = mutation({
+  args: { id: v.id("assessments"), emails: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const me = await requireRecruiter(ctx)
+    const a = await ctx.db.get(args.id)
+    if (!a) throw new Error("Assessment not found.")
+    if (a.status !== "active") throw new Error("Reopen the assessment before sending its link.")
+    const emails = [...new Set(args.emails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
+    if (!emails.length) throw new Error("Enter at least one email address.")
+    if (emails.length > 50) throw new Error("Send to at most 50 addresses at a time.")
+    const bad = emails.find((e) => !EMAIL_RE.test(e) || e.length > 254)
+    if (bad) throw new Error(`Not a valid email address: ${bad}`)
+    await hit(ctx, `emailLink:${me.userId}`, 20)
+    for (const to of emails) {
+      await ctx.scheduler.runAfter(0, internal.email.send, {
+        to,
+        subject: `Assessment: ${a.title}`,
+        text: `Hi,
+
+You've been invited to take "${a.title}" (${a.minutes} minutes). Open the link, enter your name and press Start when you're ready.
+
+${siteUrl(`/a/${a.token}`)}`,
+      })
+    }
+    return emails.length
+  },
+})
+
 export const setStatus = mutation({
   args: { id: v.id("assessments"), status: v.union(v.literal("active"), v.literal("closed")) },
   handler: async (ctx, args) => {
@@ -163,8 +198,25 @@ export const join = mutation({
     const name = args.name.trim()
     if (!name || name.length > 120) throw new Error("Enter your name (max 120 characters).")
     const email = args.email?.trim().toLowerCase() || undefined
-    if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)) {
+    if (email && (!EMAIL_RE.test(email) || email.length > 254)) {
       throw new Error("Enter a valid email address.")
+    }
+    // Same email joining again (another device): never hand the existing token to whoever typed
+    // the address; email it to the address instead.
+    const existing = email ? (await candidatesOf(ctx, a)).find((c) => c.email === email) : undefined
+    if (existing) {
+      if (existing.status === "submitted") throw new Error("You have already submitted this assessment.")
+      if (existing.status === "revoked") throw new Error("Your attempt was withdrawn. Contact the hiring team.")
+      await ctx.scheduler.runAfter(0, internal.email.send, {
+        to: email!,
+        subject: `Continue your assessment: ${a.title}`,
+        text: `Hi ${existing.name},
+
+Here is your personal link to continue where you left off:
+
+${siteUrl(`/assess?t=${existing.token}`)}`,
+      })
+      return { candidateToken: null, emailed: true }
     }
     const candidateToken = newToken()
     await ctx.db.insert("candidates", {
@@ -177,7 +229,8 @@ export const join = mutation({
       createdBy: a.createdBy,
       createdAt: Date.now(),
       assessmentId: a._id,
+      expiresAt: Date.now() + JOIN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
     })
-    return { candidateToken }
+    return { candidateToken, emailed: false }
   },
 })

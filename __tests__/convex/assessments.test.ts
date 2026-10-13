@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { api } from "../../convex/_generated/api"
 import { installFakeJudges, makeT, seedOwner, seedUser, uninstallFakeJudges } from "./helpers"
 
@@ -23,7 +23,7 @@ describe("reusable assessment links", () => {
     })
     expect(await t.query(api.assessments.publicInfo, { token: "a".repeat(48) })).toBeNull()
 
-    const { candidateToken } = await t.mutation(api.assessments.join, { token, name: " Ana ", email: "Ana@X.com" })
+    const candidateToken = (await t.mutation(api.assessments.join, { token, name: " Ana ", email: "Ana@X.com" })).candidateToken!
     const { candidateToken: other } = await t.mutation(api.assessments.join, { token, name: "Bo" })
     expect(candidateToken).not.toEqual(other)
     expect(await t.query(api.candidates.session, { token: candidateToken })).toMatchObject({ name: "Ana", status: "invited", minutes: 25 })
@@ -78,7 +78,7 @@ describe("reusable assessment links", () => {
     const owner = await seedOwner(t)
     const join = async (aiAssisted: boolean) => {
       const { token } = await owner.mutation(api.assessments.create, { ...CONFIG, aiAssisted })
-      const { candidateToken } = await t.mutation(api.assessments.join, { token, name: "Ana" })
+      const candidateToken = (await t.mutation(api.assessments.join, { token, name: "Ana" })).candidateToken!
       await t.mutation(api.candidates.start, { token: candidateToken })
       return candidateToken
     }
@@ -86,5 +86,27 @@ describe("reusable assessment links", () => {
     expect(await t.query(api.candidates.session, { token: off })).toMatchObject({ aiAssisted: false })
     await expect(t.action(api.builds.ask, { token: off, prompt: "why?" })).rejects.toThrow(/turned off/)
     expect(await t.query(api.candidates.session, { token: await join(true) })).toMatchObject({ aiAssisted: true })
+  })
+
+  it("a second join with the same email emails the existing link instead of returning it", async () => {
+    const t = makeT()
+    const owner = await seedOwner(t)
+    const { id, token } = await owner.mutation(api.assessments.create, CONFIG)
+    const first = await t.mutation(api.assessments.join, { token, name: "Ana", email: "ana@x.com" })
+    expect(first).toMatchObject({ emailed: false })
+    const again = await t.mutation(api.assessments.join, { token, name: "Impostor", email: "ANA@x.com" })
+    expect(again).toEqual({ candidateToken: null, emailed: true })
+    expect((await owner.query(api.assessments.get, { id }))!.candidates).toHaveLength(1)
+    await owner.mutation(api.assessments.emailLink, { id, emails: ["a@b.co", " a@b.co ", "c@d.co"] }).then((n) => expect(n).toBe(2))
+    await expect(owner.mutation(api.assessments.emailLink, { id, emails: ["nope"] })).rejects.toThrow(/valid email/)
+  })
+
+  it("joined links expire if not started in time", async () => {
+    const t = makeT()
+    const owner = await seedOwner(t)
+    const { token } = await owner.mutation(api.assessments.create, CONFIG)
+    const candidateToken = (await t.mutation(api.assessments.join, { token, name: "Ana" })).candidateToken!
+    vi.setSystemTime(Date.now() + 8 * 24 * 60 * 60 * 1000)
+    await expect(t.mutation(api.candidates.start, { token: candidateToken })).rejects.toThrow(/expired/)
   })
 })

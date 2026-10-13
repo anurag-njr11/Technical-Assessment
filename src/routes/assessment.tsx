@@ -124,7 +124,7 @@ function Assessment() {
         {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
 
         <Panel className="mt-8" title="Share link" description={a.status === 'active' ? undefined : 'Closed: the link no longer accepts new candidates.'}>
-          {a.status === 'active' ? <AssessmentLink token={a.token} /> : null}
+          {a.status === 'active' ? <><AssessmentLink token={a.token} /><EmailLink id={a._id} /></> : null}
         </Panel>
 
         <Panel
@@ -187,6 +187,44 @@ function Assessment() {
 
         {comparing && compared.length >= 2 ? <Compare rows={compared} onClose={() => setComparing(false)} /> : null}
     </RecruiterPage>
+  )
+}
+
+/** Emails the shared link to a pasted list of addresses. */
+function EmailLink({ id }: { id: Id<'assessments'> }) {
+  const send = useMutation(api.assessments.emailLink)
+  const [emails, setEmails] = useState('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setMsg(null)
+    try {
+      const n = await send({ id, emails: emails.split(/[\s,;]+/) })
+      setMsg({ ok: true, text: `Sent to ${n} address${n === 1 ? '' : 'es'}.` })
+      setEmails('')
+    } catch (err) {
+      setMsg({ ok: false, text: cleanError(err) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form onSubmit={submit} className="mt-5 flex flex-col gap-2 border-t border-border pt-5 sm:flex-row sm:items-start">
+      <label className="grid flex-1 gap-1.5 text-xs font-medium text-muted-foreground">
+        Email the link to candidates
+        <textarea
+          rows={2}
+          value={emails}
+          onChange={(e) => setEmails(e.target.value)}
+          placeholder="ana@example.com, bo@example.com"
+          className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/15"
+        />
+        {msg ? <span className={msg.ok ? 'text-success' : 'text-destructive'} role="status">{msg.text}</span> : null}
+      </label>
+      <button type="submit" disabled={busy || !emails.trim()} className={cn(btn.secondary, 'sm:mt-5')}>{busy ? 'Sending…' : 'Send'}</button>
+    </form>
   )
 }
 

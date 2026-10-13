@@ -17,6 +17,7 @@ import type * as buildScenario from "../buildScenario.js";
 import type * as builds from "../builds.js";
 import type * as candidates from "../candidates.js";
 import type * as dashboard from "../dashboard.js";
+import type * as email from "../email.js";
 import type * as evaluation from "../evaluation.js";
 import type * as golden from "../golden.js";
 import type * as grading from "../grading.js";
@@ -49,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   builds: typeof builds;
   candidates: typeof candidates;
   dashboard: typeof dashboard;
+  email: typeof email;
   evaluation: typeof evaluation;
   golden: typeof golden;
   grading: typeof grading;

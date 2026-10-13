@@ -512,7 +512,7 @@ function InvitePanel() {
   return (
     <Panel
       title="Invite a candidate"
-      description="Each candidate gets a personal, single-use link. The link is copied to your clipboard when you create it."
+      description="Each candidate gets a personal, single-use link. It is copied to your clipboard, and emailed to the candidate if you enter an address."
     >
       <form onSubmit={send} className="grid gap-2.5 sm:grid-cols-2">
         <select value={assessment} onChange={(e) => setAssessment(e.target.value)} aria-label="Assessment" className={cn(fieldCls, 'sm:col-span-2')}>

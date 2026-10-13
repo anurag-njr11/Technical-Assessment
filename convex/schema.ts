@@ -336,6 +336,8 @@ export default defineSchema({
     deadline: v.optional(v.number()),
     submissionId: v.optional(v.id("submissions")),
     assessmentId: v.optional(v.id("assessments")),
+    // Joined via an assessment link: must start before this time.
+    expiresAt: v.optional(v.number()),
   })
     .index("by_token", ["token"])
     .index("by_assessment", ["assessmentId"])

@@ -20,6 +20,7 @@ function Join() {
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const key = `rb:join:${token}`
 
   // Each join creates a new candidate, so a refresh reuses the one we already have.
@@ -38,6 +39,11 @@ function Join() {
     setError('')
     try {
       const r = await join({ token, name: name.trim(), email: email.trim() || undefined })
+      if (!r.candidateToken) {
+        setNotice(`You've already joined with this email. We sent your personal link to ${email.trim()} so you can continue there.`)
+        setBusy(false)
+        return
+      }
       try {
         localStorage.setItem(key, r.candidateToken)
       } catch {}
@@ -103,6 +109,7 @@ function Join() {
                 />
               </label>
               {error ? <p className="text-[13px] text-destructive" role="alert">{error}</p> : null}
+              {notice ? <p className="text-[13px] text-success" role="status">{notice}</p> : null}
               <button
                 type="submit"
                 disabled={busy}

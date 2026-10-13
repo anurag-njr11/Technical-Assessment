@@ -8,6 +8,7 @@ import { BATTERIES, SCENARIO_META } from "./answerKey"
 import { requireRecruiter } from "./access"
 import { LIMITS, hit } from "./rateLimit"
 import { insertSubmission, validateWork } from "./submissions"
+import { siteUrl } from "./email"
 
 // FR-C-12 single-use invite links, FR-C-13 autosave, FR-C-14 enforced timer,
 // FR-C-16 extra-time accommodations.
@@ -104,6 +105,21 @@ export const create = mutation({
       })
       first ??= { id, token }
     }
+    // FR-R-6: email the personal link (battery: the one group link).
+    if (email) {
+      const link = siteUrl(groupToken ? `/assess?g=${groupToken}` : `/assess?t=${first!.token}`)
+      await ctx.scheduler.runAfter(0, internal.email.send, {
+        to: email,
+        subject: "Your ReviewBench assessment",
+        text: `Hi ${name},
+
+You've been invited to an engineering assessment. Open your personal link when you're ready; the timer starts only when you press Start.
+
+${link}
+
+This link is for you only. Please don't share it.`,
+      })
+    }
     return { ...first!, groupToken: groupToken ?? null }
   },
 })
@@ -197,6 +213,7 @@ export const start = mutation({
     if (c.status === "revoked") throw new Error("This assessment link has been withdrawn.")
     if (c.status === "submitted") throw new Error("This assessment has already been submitted.")
     if (c.status === "started") return { deadline: c.deadline! }
+    if (c.expiresAt && Date.now() > c.expiresAt) throw new Error("This link has expired. Ask the hiring team for a new one.")
     const meta = SCENARIO_META[c.scenarioId]
     const startedAt = Date.now()
     const deadline = startedAt + ((await baseMinutes(ctx, c)) + c.extraMinutes) * 60 * 1000
