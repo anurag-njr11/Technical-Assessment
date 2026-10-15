@@ -18,6 +18,8 @@ export async function evaluate(cases: GoldenCase[], ask: Asker, panel: Judge[], 
   const perCase: Array<{ id: string; profile: string; overall: number; needsReview: boolean; calls: number }> = []
   let positives = 0
   let validPositives = 0
+  let votes = 0
+  let unavailable = 0
   for (const [n, c] of cases.entries()) {
     const key = ANSWER_KEYS[c.scenarioId]
     const r = await gradeSubmission({ comments: c.comments, verdict: c.verdict, candidateName: "Golden Candidate" }, key, ask, panel)
@@ -29,7 +31,11 @@ export async function evaluate(cases: GoldenCase[], ask: Asker, panel: Judge[], 
         council: itemOrdinal(it.kind, it.outcome, it.explanation), label: itemOrdinal(it.kind, label.outcome, label.explanation ?? 0),
         councilOutcome: it.outcome, labelOutcome: label.outcome,
       })
-      for (const v of it.votes) if (v.decision) { positives++; if (v.valid) validPositives++ }
+      for (const v of it.votes) {
+        votes++
+        if (v.discardedReason === "judge unavailable") unavailable++
+        if (v.decision) { positives++; if (v.valid) validPositives++ }
+      }
     }
     perCase.push({ id: c.id, profile: c.profile, overall: r.overall, needsReview: r.needsReview, calls: r.callCount ?? 0 })
     onProgress?.(n + 1, cases.length)
@@ -77,6 +83,8 @@ export async function evaluate(cases: GoldenCase[], ask: Asker, panel: Judge[], 
       explanationExact: wilson(bothFound.filter((x) => x.council === x.label).length, bothFound.length),
     },
     evidenceValidity: wilson(validPositives, positives),
+    /** Share of judge votes where neither the primary nor the fallback model answered. */
+    judgeUnavailable: votes ? unavailable / votes : 1,
     escalationRate: wilson(perCase.filter((c) => c.needsReview).length, perCase.length),
     profiles,
     adversarial,
@@ -113,7 +121,8 @@ Models that answered: ${r.models.map((m) => `\`${m}\``).join(", ") || "none"}
 | Evidence validity (positive votes whose quote is verbatim) | ${pct(r.evidenceValidity)} | ≥ 98% |
 | Escalated to human review | ${pct(r.escalationRate)} | 5–15% |
 | Adversarial suite | ${r.adversarial.filter((a) => a.passed).length} / ${r.adversarial.length} passed | all |
-| Judge calls per review | ${num(r.cost.callsPerCase, 1)} (${r.cost.failedCalls} of ${r.cost.calls} calls failed over) | — |
+| Judge calls per review | ${num(r.cost.callsPerCase, 1)} (${r.cost.failedCalls} of ${r.cost.calls} calls failed over to a fallback or failed) | — |
+| Judge votes with no model available | ${(100 * r.judgeUnavailable).toFixed(1)}% | 0% |
 | Tokens (estimated) | ${r.cost.inputTokensEst.toLocaleString()} in / ${r.cost.outputTokensEst.toLocaleString()} out | — |
 | Latency per call p50 / p95 | ${num(r.latency.p50, 1)} s / ${num(r.latency.p95, 1)} s | — |
 
