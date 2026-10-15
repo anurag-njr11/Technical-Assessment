@@ -6,7 +6,7 @@
 // per-dimension scores.
 
 import { BUILD_FAULTS, gradeBuild } from "./buildScenario"
-import type { BuildEvent as ScenarioEvent } from "./buildScenario"
+import type { BuildEvent as ScenarioEvent, TestOutcome } from "./buildScenario"
 import { evidenceIsReal, parseJson } from "./grading"
 import { getPanel, redact } from "./judges"
 import type { Asker, Judge } from "./judges"
@@ -119,11 +119,13 @@ export type TrajectoryInput = {
   task?: string
   candidateName?: string
   candidateEmail?: string
+  /** Builds: hidden-test outcomes from the sandbox. */
+  hidden?: TestOutcome[]
 }
 
 export async function gradeTrajectory(input: TrajectoryInput, ask: Asker, panel: Judge[] = getPanel()): Promise<Result> {
   const isBuild = !input.base
-  const base = input.base ?? gradeBuild(input.scenarioId, input.code, input.events)
+  const base = input.base ?? { ...gradeBuild(input.scenarioId, input.code, input.events, input.hidden), ...(input.hidden?.length ? { tests: input.hidden } : {}) }
   const lines = renderEvents(input.events, input.code, isBuild ? "final submitted code" : "final review comments and verdict", {
     name: input.candidateName, email: input.candidateEmail,
   })

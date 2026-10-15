@@ -247,6 +247,8 @@ export const resultValidator = v.object({
   ragExamples: v.optional(v.number()),
   configNote: v.optional(v.string()),
   trajectory: v.optional(trajectoryValidator),
+  // M3: hidden tests executed against the final code in the QuickJS sandbox.
+  tests: v.optional(v.array(v.object({ name: v.string(), pass: v.boolean(), fault: v.optional(v.string()), detail: v.optional(v.string()) }))),
   // Set once a human override has been applied (HR-2/3).
   machine: v.optional(v.object({ overall: v.number(), band: v.string() })),
   overrideCount: v.optional(v.number()),

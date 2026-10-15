@@ -499,6 +499,8 @@ export const grade = internalAction({
     }
     if (SCENARIO_META[sub.scenarioId]?.kind === "build") {
       const traces: Trace[] = []
+      // Hidden tests run in the sandbox; if it fails, gradeBuild falls back to source checks.
+      const hidden = await ctx.runAction(internal.sandbox.run, { scenarioId: sub.scenarioId, code: sub.build?.code ?? "" }).catch(() => [])
       try {
         const result = await gradeTrajectory(
           {
@@ -508,6 +510,7 @@ export const grade = internalAction({
             candidateName: sub.candidateName,
             candidateEmail: sub.candidateEmail,
             task: buildTask(sub.scenarioId),
+            hidden,
           },
           liveAsker(traces, cache),
         )

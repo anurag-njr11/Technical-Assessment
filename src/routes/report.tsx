@@ -121,6 +121,7 @@ function Report() {
         communication?: { value: number; detail: string }
         configNote?: string
         trajectory?: TrajectoryResult
+        tests?: Array<{ name: string; pass: boolean; fault?: string; detail?: string }>
       }
     | undefined
   const scenario = SCENARIOS[sub.scenarioId] as (typeof SCENARIOS)[string] | undefined
@@ -229,6 +230,8 @@ function Report() {
                   ))}
                 </div>
               </section>
+
+              {result.tests?.length ? <HiddenTests tests={result.tests} /> : null}
 
               {result.followUpQuality || result.communication || result.configNote ? (
                 <section className="rounded-xl border border-border bg-card p-6 text-sm">
@@ -812,6 +815,34 @@ function InsightsPanel({ submissionId }: { submissionId: string }) {
         <p className="mt-1 text-xs text-muted-foreground">Used to measure whether scores predict job performance.</p>
         {error ? <p className="mt-1 text-[13px] text-destructive">{error}</p> : null}
       </div>
+    </section>
+  )
+}
+
+/** M3: hidden tests that ran against the final code in the QuickJS sandbox. */
+function HiddenTests({ tests }: { tests: Array<{ name: string; pass: boolean; fault?: string; detail?: string }> }) {
+  const passed = tests.filter((t) => t.pass).length
+  return (
+    <section className="rounded-xl border border-border bg-card p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-[15px] font-semibold tracking-tight">Hidden tests</h2>
+        <span className="font-mono text-sm">{passed} / {tests.length} passed</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Run against the submitted code in a sandbox (QuickJS in WebAssembly, no network or secrets). A planted fault counts as fixed only if its test passes.
+      </p>
+      <ul className="mt-3 divide-y divide-border text-sm">
+        {tests.map((t) => (
+          <li key={t.name} className="flex flex-wrap items-start gap-2 py-2">
+            <span className={cn('rounded px-1.5 font-mono text-xs font-semibold', t.pass ? 'bg-success-soft text-success' : 'bg-destructive-soft text-destructive')}>{t.pass ? 'PASS' : 'FAIL'}</span>
+            <span className="min-w-0 flex-1">
+              {t.name}
+              {t.fault ? <span className="ml-1.5 text-xs text-muted-foreground">· planted fault {t.fault}</span> : null}
+              {t.detail && !t.pass ? <span className="block text-xs text-muted-foreground">{t.detail}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

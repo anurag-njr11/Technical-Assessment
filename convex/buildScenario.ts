@@ -222,8 +222,19 @@ export function assistantReply(scenarioId: string, prompt: string): Script {
 }
 
 /** Deterministic M3 grade: faults caught, calibrated trust, testing, instructions, completion. */
-export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[]): Result {
+/** A hidden-test outcome from the sandbox (convex/sandbox.ts). */
+export type TestOutcome = { name: string; pass: boolean; fault?: string; detail?: string }
+
+/**
+ * Deterministic M3 grade. With `hidden` (tests executed in the sandbox) a fault
+ * counts as fixed only if its test passes, and completion means every
+ * behaviour test passes; without it (sandbox unavailable) the source checks
+ * in BUILD_FAULTS / COMPLETE are used.
+ */
+export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[], hidden?: TestOutcome[]): Result {
   const faults = BUILD_FAULTS[scenarioId] ?? []
+  const fixedByTest = new Map((hidden ?? []).filter((t) => t.fault).map((t) => [t.fault!, t.pass]))
+  const fixed = (f: Fault) => (fixedByTest.has(f.id) ? fixedByTest.get(f.id)! : !f.present(code))
   const exposed = new Set(events.filter((e) => e.type === "fault_injected").map((e) => e.data?.split("|")[0]))
   const items: ItemResult[] = faults.map((f) => ({
     id: f.id,
@@ -232,7 +243,7 @@ export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[
     category: f.category,
     severity: f.severity,
     weight: f.weight,
-    outcome: !exposed.has(f.id) ? "not_exposed" : f.present(code) ? "missed" : "found",
+    outcome: !exposed.has(f.id) ? "not_exposed" : fixed(f) ? "found" : "missed",
     explanation: null,
     commentText: null,
     commentLine: null,
@@ -263,7 +274,8 @@ export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[
   const prompts = events.filter((e) => e.type === "ai_prompt").map((e) => e.data ?? "")
   const goodPrompts = prompts.filter((p) => p.trim().split(/\s+/).length >= 6).length
   const instructions = prompts.length ? goodPrompts / prompts.length : 0
-  const complete = COMPLETE[scenarioId]?.(code) ?? false
+  const behaviour = (hidden ?? []).filter((t) => !t.fault)
+  const complete = behaviour.length ? behaviour.every((t) => t.pass) : (COMPLETE[scenarioId]?.(code) ?? false)
 
   const values = {
     detection,
@@ -286,7 +298,12 @@ export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[
       precision: { value: trust, detail: `${correctOffered.filter((id) => accepted.has(id)).length} / ${correctOffered.length} correct suggestions used` },
       decoyDiscipline: { value: values.decoyDiscipline, detail: `${testRuns} test run(s)` },
       explanationQuality: { value: instructions, detail: `${goodPrompts} / ${prompts.length} specific prompts (heuristic)` },
-      verdict: { value: values.verdict, detail: complete ? "All required behaviour present" : "Required behaviour missing" },
+      verdict: {
+        value: values.verdict,
+        detail: behaviour.length
+          ? `${behaviour.filter((t) => t.pass).length} / ${behaviour.length} hidden behaviour tests pass`
+          : complete ? "All required behaviour present" : "Required behaviour missing",
+      },
     },
     items,
     extraComments: [],

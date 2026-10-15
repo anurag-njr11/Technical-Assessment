@@ -60,6 +60,9 @@ describe("M3 Directed Build", () => {
     expect(r.components.decoyDiscipline.value).toBe(1)
     expect(r.components.verdict.value).toBe(1)
     expect(sub.build!.events.some((e) => e.type === "fault_injected")).toBe(true)
+    // Graded by running the code: hidden tests from the sandbox are kept on the result.
+    expect(r.tests!.find((x) => x.fault === "F3")).toMatchObject({ pass: true })
+    expect(r.tests!.length).toBeGreaterThanOrEqual(8)
   })
 
   it("leaves the fault as missed when the faulty suggestion is submitted unchanged", async () => {
