@@ -546,7 +546,12 @@ function Review({
             {scenario.rationale ? <p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">{scenario.rationale}</p> : null}
             {scenario.assumptions?.length ? (
               <ul className="mt-2 max-w-3xl list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/80">
-                {scenario.assumptions.map((a) => <li key={a}>{a}</li>)}
+                {scenario.assumptions.map((a) => (
+                  <li key={a}>
+                    {a}
+                    {aiAssisted ? <QuestionThis assumption={a} setPrompt={setPrompt} /> : null}
+                  </li>
+                ))}
               </ul>
             ) : null}
           </div>
@@ -688,6 +693,26 @@ function Review({
         </div>
       </aside>
     </div>
+  )
+}
+
+/**
+ * Drafts a neutral question about one of the agent's assumptions into the chat
+ * (the candidate edits and sends it). Same wording for every assumption, so it
+ * never hints which ones are wrong.
+ */
+function QuestionThis({ assumption, setPrompt }: { assumption: string; setPrompt: (p: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setPrompt(`You assumed: "${assumption}" What is that based on?`)
+        document.getElementById('assistant-input')?.focus()
+      }}
+      className="ml-2 rounded border border-border px-1.5 py-0.5 align-middle text-[11px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      Question this
+    </button>
   )
 }
 
@@ -843,7 +868,12 @@ function DecisionForm({
           <h3 className="mt-5 text-sm font-semibold">The agent's notes</h3>
           <p className="mt-2 text-sm leading-relaxed text-foreground/80">{scenario.rationale}</p>
           <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/80">
-            {scenario.assumptions.map((a) => <li key={a}>{a}</li>)}
+            {scenario.assumptions.map((a) => (
+              <li key={a}>
+                {a}
+                {aiAssisted ? <QuestionThis assumption={a} setPrompt={setPrompt} /> : null}
+              </li>
+            ))}
           </ul>
         </div>
         {aiAssisted ? (

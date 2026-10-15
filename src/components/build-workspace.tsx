@@ -199,14 +199,22 @@ export function AssistantChat({
       </div>
       {error ? <p className="px-4 pb-2 text-[13px] text-destructive" role="alert">{error}</p> : null}
       <form onSubmit={send} className="flex gap-2 border-t border-border p-3">
-        <input
+        <textarea
           id="assistant-input"
+          rows={2}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Type a message…"
+          onKeyDown={(e) => {
+            // Enter sends; Shift+Enter adds a line.
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              e.currentTarget.form?.requestSubmit()
+            }
+          }}
+          placeholder="Type a message… (Enter to send)"
           aria-label="Message the AI"
           maxLength={2000}
-          className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+          className="min-w-0 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
         />
         <button type="submit" disabled={!!pending} aria-label="Send" className="rounded-lg bg-primary px-3 text-primary-foreground disabled:opacity-60">
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}

@@ -16,7 +16,7 @@ computes the score.
 > **Live demo:** _link goes here after deploy_ · no sign-up: browse graded
 > candidates, then take an assessment yourself and watch your report appear.
 
-<!-- screenshots: docs/screenshots/*.png -->
+![Candidate reviewing an AI-written PR, with the agent's notes and an "Ask the agent" chat](docs/screenshots/candidate-pr-review.jpg)
 
 ## Why it's different
 
