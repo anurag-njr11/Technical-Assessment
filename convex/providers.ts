@@ -73,7 +73,7 @@ function release(key: string) {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const MAX_429_RETRIES = 3
 
-/** POSTs to the model's endpoint; waits for a slot and retries 429s (Retry-After or exponential). */
+/** POSTs to the model's endpoint; waits for a slot and retries 429/503 (Retry-After or exponential). */
 export async function post(ref: ModelRef, body: Record<string, unknown>): Promise<Response> {
   const { baseUrl, key } = endpoint(ref)
   const slot = ref.provider ?? "default"
@@ -85,7 +85,8 @@ export async function post(ref: ModelRef, body: Record<string, unknown>): Promis
         headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
         body: JSON.stringify({ ...body, model: ref.model }),
       })
-      if (response.status !== 429 || attempt >= MAX_429_RETRIES) return response
+      // 429 rate limited, 503 overloaded ("high demand"): both clear up after a short wait.
+      if ((response.status !== 429 && response.status !== 503) || attempt >= MAX_429_RETRIES) return response
       const retryAfter = Number(response.headers.get("retry-after"))
       await sleep(Math.min(20_000, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** (attempt + 1)))
     }

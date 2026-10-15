@@ -38,7 +38,7 @@ export const DEFAULT_PANEL: Judge[] = [
 export const FREE_PANEL: Judge[] = [
   {
     name: "Judge A",
-    primary: { provider: "gemini", model: "gemini-flash-latest", family: "google" },
+    primary: { provider: "gemini", model: "gemini-3.6-flash", family: "google" },
     fallback: { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free", family: "nvidia" },
   },
   {
