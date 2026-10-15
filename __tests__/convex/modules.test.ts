@@ -108,7 +108,7 @@ describe("M3 live assistant and orders-api-build", () => {
   it("falls back to the scripted reply when the model is down", async () => {
     const t = makeT()
     const { token } = await inviteTo(t, "orders-api-build")
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 503 })))
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 500 })))
     const reply = await t.action(api.builds.ask, { token, prompt: "how should I paginate or limit results" })
     expect(reply.code).toContain("LIMIT 50")
   })
@@ -145,7 +145,7 @@ describe("PR-author chat on code reviews", () => {
     expect(bodies[0].messages[1].content).toContain("gateway.refund() is the SDK")
     expect(bodies[0].messages[1].content).toContain("+24:     gateway.refund(payment.gateway_ref, amount)")
 
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 503 })))
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 500 })))
     await expect(t.action(api.builds.ask, { token, prompt: "Why is logging the card number fine?" })).rejects.toThrow(/didn't reply/)
 
     await t.mutation(api.submissions.submit, { token, verdict: "request_changes", comments: [], answers: ANSWERS })

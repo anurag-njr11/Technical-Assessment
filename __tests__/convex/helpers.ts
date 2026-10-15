@@ -40,7 +40,7 @@ function between(s: string, a: string, b: string) {
 
 function fakeJudge(model: string, prompt: string) {
   const mode = modes[model] ?? "honest"
-  if (mode === "down") return new Response("unavailable", { status: 503 })
+  if (mode === "down") return new Response("unavailable", { status: 500 })
   if (mode === "broke") return new Response("insufficient credits", { status: 402 })
   if (mode === "garbage") return chat("I think it's fine!")
 
