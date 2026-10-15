@@ -46,9 +46,15 @@ function Home() {
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
               It evaluates whether you can effectively work with AI to produce reliable engineering work.
             </p>
+            <p className="mt-3 max-w-xl text-sm text-muted-foreground">
+              No sign-up needed for the demo: browse graded candidates, then take an assessment yourself and watch your report appear.
+            </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/recruiter" className={cn(btn.primary, 'group px-5 py-2.5')}>
-                Recruiter sign in <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              <Link to="/demo" className={cn(btn.primary, 'group px-5 py-2.5')}>
+                Try the live demo <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+              <Link to="/recruiter" className={cn(btn.secondary, 'px-5 py-2.5')}>
+                Recruiter sign in
               </Link>
               <Link to="/methodology" className={cn(btn.secondary, 'px-5 py-2.5')}>
                 How grading works

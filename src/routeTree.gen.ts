@@ -16,6 +16,7 @@ import { Route as ReliabilityRouteImport } from './routes/reliability'
 import { Route as RecruiterRouteImport } from './routes/recruiter'
 import { Route as MethodologyRouteImport } from './routes/methodology'
 import { Route as ItemsRouteImport } from './routes/items'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as AssessmentRouteImport } from './routes/assessment'
 import { Route as AssessRouteImport } from './routes/assess'
 import { Route as IndexRouteImport } from './routes/index'
@@ -56,6 +57,11 @@ const ItemsRoute = ItemsRouteImport.update({
   path: '/items',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AssessmentRoute = AssessmentRouteImport.update({
   id: '/assessment',
   path: '/assessment',
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
   '/assessment': typeof AssessmentRoute
+  '/demo': typeof DemoRoute
   '/items': typeof ItemsRoute
   '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
   '/assessment': typeof AssessmentRoute
+  '/demo': typeof DemoRoute
   '/items': typeof ItemsRoute
   '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
@@ -108,6 +116,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/assess': typeof AssessRoute
   '/assessment': typeof AssessmentRoute
+  '/demo': typeof DemoRoute
   '/items': typeof ItemsRoute
   '/methodology': typeof MethodologyRoute
   '/recruiter': typeof RecruiterRoute
@@ -123,6 +132,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assess'
     | '/assessment'
+    | '/demo'
     | '/items'
     | '/methodology'
     | '/recruiter'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assess'
     | '/assessment'
+    | '/demo'
     | '/items'
     | '/methodology'
     | '/recruiter'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assess'
     | '/assessment'
+    | '/demo'
     | '/items'
     | '/methodology'
     | '/recruiter'
@@ -163,6 +175,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AssessRoute: typeof AssessRoute
   AssessmentRoute: typeof AssessmentRoute
+  DemoRoute: typeof DemoRoute
   ItemsRoute: typeof ItemsRoute
   MethodologyRoute: typeof MethodologyRoute
   RecruiterRoute: typeof RecruiterRoute
@@ -224,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ItemsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/assessment': {
       id: '/assessment'
       path: '/assessment'
@@ -259,6 +279,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AssessRoute: AssessRoute,
   AssessmentRoute: AssessmentRoute,
+  DemoRoute: DemoRoute,
   ItemsRoute: ItemsRoute,
   MethodologyRoute: MethodologyRoute,
   RecruiterRoute: RecruiterRoute,

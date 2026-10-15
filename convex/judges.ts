@@ -44,7 +44,7 @@ export const FREE_PANEL: Judge[] = [
   {
     name: "Judge B",
     primary: { provider: "groq", model: "openai/gpt-oss-120b", family: "openai" },
-    fallback: { provider: "openrouter", model: "thinkingmachines/inkling:free", family: "thinkingmachines" },
+    fallback: { provider: "groq", model: "llama-3.3-70b-versatile", family: "meta" },
   },
   {
     name: "Judge C",
@@ -180,7 +180,7 @@ export async function callModel(
     ],
   })
   if (response.status === 402) throw new Error(CREDITS_ERROR)
-  if (!response.ok) throw new Error(`Model request failed (${response.status}).`)
+  if (!response.ok) throw new Error(`Model request failed (${response.status})${await providerMessage(response)}`)
   if (onText && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
     const text = stripThinking(await readStream(response.body, (soFar) => onText(stripThinking(soFar)), usage))
     if (usage && !usage.output) {
@@ -209,6 +209,20 @@ export type JudgeCache = { get: (key: string) => Promise<string | null>; put: (k
 async function sha256(s: string) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
   return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+/** ": <provider's error message>" (first 160 chars), so models:check and traces say why a call failed. */
+async function providerMessage(response: Response): Promise<string> {
+  const body = await response.text().catch(() => "")
+  let msg = body
+  try {
+    const j = JSON.parse(body) as { error?: { message?: string } | string; message?: string }
+    msg = (typeof j.error === "string" ? j.error : j.error?.message) ?? j.message ?? body
+  } catch {
+    // not JSON
+  }
+  msg = msg.replace(/\s+/g, " ").trim().slice(0, 160)
+  return msg ? `: ${msg}` : "."
 }
 
 /** Reads an OpenAI-style SSE stream ("data: {...}" lines, "data: [DONE]"). */

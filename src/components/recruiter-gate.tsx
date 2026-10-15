@@ -56,8 +56,33 @@ export function RecruiterPage({
 }) {
   return (
     <Page nav={<RecruiterNav />} right={<>{right}<WorkspaceBadge /><SignOutButton /></>}>
+      <DemoBanner />
       {loading ? <PageSpinner /> : children}
     </Page>
+  )
+}
+
+/** Demo viewers: what they're looking at, and the assessments they can take themselves. */
+function DemoBanner() {
+  const me = useQuery(api.access.me)
+  const viewer = me?.signedIn && me.role === 'viewer'
+  const assessments = useQuery(api.assessments.list, viewer ? {} : 'skip')
+  if (!viewer) return null
+  return (
+    <div className="mb-6 rounded-xl border border-primary/25 bg-accent/60 p-4 text-sm">
+      <p className="font-semibold">You're exploring a demo workspace with sample candidates.</p>
+      <p className="mt-1 text-muted-foreground">
+        Every report here was produced by the real grading pipeline. Try it as a candidate: open an assessment in a new tab,
+        submit, and your report appears in this dashboard about a minute later.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(assessments ?? []).map((a) => (
+          <a key={a._id} href={`/a/${a.token}`} target="_blank" rel="noreferrer" className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-muted">
+            Take: {a.title.split(' · ').slice(1).join(' · ') || a.title}
+          </a>
+        ))}
+      </div>
+    </div>
   )
 }
 

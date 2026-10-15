@@ -374,6 +374,8 @@ export default defineSchema({
     deadline: v.optional(v.number()),
     submissionId: v.optional(v.id("submissions")),
     assessmentId: v.optional(v.id("assessments")),
+    // A seeded persona in the demo workspace (kept by the nightly reset).
+    demoSeed: v.optional(v.boolean()),
     // Joined via an assessment link: must start before this time.
     expiresAt: v.optional(v.number()),
   })

@@ -1,5 +1,6 @@
 import { convexAuth } from "@convex-dev/auth/server"
 import { Password } from "@convex-dev/auth/providers/Password"
+import { Anonymous } from "@convex-dev/auth/providers/Anonymous"
 import Google from "@auth/core/providers/google"
 import { ResendOTP } from "./ResendOTP"
 
@@ -24,7 +25,8 @@ const google = process.env.AUTH_GOOGLE_ID
   : []
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
-  providers: [ResendOTP, Password({ reset: ResendOTP, verify: ResendOTP }), ...google],
+  // Anonymous: only for "Try the live demo" (read-only viewer of the demo workspace).
+  providers: [ResendOTP, Password({ reset: ResendOTP, verify: ResendOTP }), Anonymous, ...google],
 })
 
 export const googleEnabled = () => google.length > 0

@@ -18,6 +18,8 @@ import type * as builds from "../builds.js";
 import type * as candidates from "../candidates.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
+import type * as demo from "../demo.js";
+import type * as demoData from "../demoData.js";
 import type * as email from "../email.js";
 import type * as evaluation from "../evaluation.js";
 import type * as golden from "../golden.js";
@@ -56,6 +58,8 @@ declare const fullApi: ApiFromModules<{
   candidates: typeof candidates;
   crons: typeof crons;
   dashboard: typeof dashboard;
+  demo: typeof demo;
+  demoData: typeof demoData;
   email: typeof email;
   evaluation: typeof evaluation;
   golden: typeof golden;

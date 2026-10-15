@@ -22,6 +22,7 @@ import type { Override, Result } from "./scoring"
 export const MAX_COMMENTS = 40
 export const MAX_TEXT = 4000
 export const MAX_ANSWERS = 10
+const DEMO_SUBMITS_PER_HOUR = 20
 
 type CommentIn = { id: string; file: string; line: number; severity: string; text: string }
 
@@ -107,7 +108,9 @@ export const submit = mutation({
   handler: async (ctx, args) => {
     const candidate = await requireActive(ctx, args.token)
     // Per workspace, so one company's traffic can't exhaust another's judge budget.
-    await hit(ctx, `submit:${candidate.workspaceId ?? "global"}`, LIMITS.submitsPerHour())
+    // The public demo gets a smaller share of the free-tier quota.
+    const ws = candidate.workspaceId ? await ctx.db.get(candidate.workspaceId) : null
+    await hit(ctx, `submit:${candidate.workspaceId ?? "global"}`, ws?.demo ? DEMO_SUBMITS_PER_HOUR : LIMITS.submitsPerHour())
     const meta = SCENARIO_META[candidate.scenarioId]
     if (meta.kind === "build") {
       const code = args.code ?? ""
