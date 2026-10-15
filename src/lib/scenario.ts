@@ -518,6 +518,56 @@ export const ADR_031: DecisionScenario = {
   ],
 }
 
+export const ADR_044: DecisionScenario = {
+  kind: 'decision',
+  id: 'adr-044-senior',
+  ticketId: 'ADR-044',
+  title: 'Should Checkout talk to Fulfillment through a Kafka event bus?',
+  role: 'Backend Engineer',
+  level: 'Senior',
+  stack: 'Architecture decision',
+  minutes: 25,
+  summary:
+    'Checkout failed twice last quarter because Fulfillment was down. An AI agent proposed the event-driven design below. Review it as you would before architecture review.',
+  context: [
+    'Checkout writes the order to Postgres, then calls Fulfillment’s HTTP API synchronously; when Fulfillment is down, checkout fails.',
+    'Peak load is 400 orders per minute.',
+    'Fulfillment must handle each order exactly once, and each warehouse must process its orders in the order they were placed.',
+    'The team is six backend engineers. We run managed Postgres and Redis; nobody has operated Kafka.',
+    'Card data lives only in the Payments service (PCI scope).',
+  ],
+  constraints: [
+    'No checkout downtime during the change.',
+    'Infrastructure spend may grow by at most $1,000 a month.',
+    'Card data must not leave the Payments service.',
+  ],
+  recommendation: [
+    'Recommendation: run our own three-broker Kafka cluster as the company event bus, starting this quarter.',
+    'Checkout saves the order in Postgres, then publishes an OrderPlaced event to Kafka.',
+    'Kafka’s exactly-once delivery means Fulfillment never processes an order twice.',
+    'Partition OrderPlaced by order_id to spread load evenly.',
+    'Put the full order in the event, including payment details, so consumers never call back.',
+    'After 5 failed attempts an event moves to a dead-letter topic.',
+    'Checkout returns as soon as the order is saved; Fulfillment confirms asynchronously.',
+  ],
+  rationale:
+    'Checkout fails whenever Fulfillment is down because it calls Fulfillment synchronously. An event bus decouples them: checkout records the order and publishes an event, and Fulfillment consumes it at its own pace.',
+  assumptions: [
+    'Saving the order and then publishing to Kafka is safe, because publishing rarely fails.',
+    'Kafka’s exactly-once delivery means Fulfillment never processes an order twice.',
+    'Partitioning by order_id is best because it spreads load evenly; ordering doesn’t matter for fulfillment.',
+    'Putting payment details in the event saves Fulfillment a call to Payments, and it is internal traffic.',
+    'Running our own Kafka cluster is cheap, and the team will pick it up quickly.',
+    'Moving an event to a dead-letter topic after 5 failed attempts stops one bad event from blocking the rest.',
+    'Returning from checkout once the order is saved takes Fulfillment outages off the checkout path.',
+  ],
+  followUps: [
+    'Which claims or assumptions in the recommendation are flawed, and why?',
+    'Which constraints, costs or risks does it ignore?',
+    'What would you recommend instead, and what would you check first?',
+  ],
+}
+
 // ---------------------------------------------------------------------------
 // M3 · Directed Build (pilot)
 // ---------------------------------------------------------------------------
@@ -614,6 +664,7 @@ export const SCENARIOS: Record<string, AnyScenario> = {
   [INV_311.id]: INV_311,
   [SUB_118.id]: SUB_118,
   [ADR_031.id]: ADR_031,
+  [ADR_044.id]: ADR_044,
   [DISC_12.id]: DISC_12,
   [ORD_SEARCH.id]: ORD_SEARCH,
 }
