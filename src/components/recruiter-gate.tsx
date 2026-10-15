@@ -79,10 +79,11 @@ function Shell({ children, right }: { children: React.ReactNode; right?: React.R
 
 function Membership({ children }: { children: React.ReactNode }) {
   const me = useQuery(api.access.me)
-  const claim = useMutation(api.access.claimWorkspace)
+  const create = useMutation(api.access.createWorkspace)
   const accept = useMutation(api.access.acceptInvite)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [name, setName] = useState('')
 
   if (me === undefined) return <FullPageSpinner />
   if (!me.signedIn) return <FullPageSpinner />
@@ -106,32 +107,33 @@ function Membership({ children }: { children: React.ReactNode }) {
         <div className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
           <ShieldCheck className="size-5" />
         </div>
-        {!me.workspaceClaimed ? (
-          <>
-            <h1 className="mt-4 text-xl font-semibold">Set up your workspace</h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              No one has claimed this ReviewBench workspace yet. Claim it to become the owner. You'll be able to invite
-              teammates by email.
-            </p>
-            <PrimaryButton busy={busy} onClick={() => run(() => claim({}))}>
-              Claim workspace as {me.email}
-            </PrimaryButton>
-          </>
-        ) : me.invited ? (
+        {me.invited ? (
           <>
             <h1 className="mt-4 text-xl font-semibold">You've been invited</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {me.email} was invited to this hiring team.
+              {me.email} was invited to {me.invitedTo[0] ?? 'a hiring team'}.
             </p>
             <PrimaryButton busy={busy} onClick={() => run(() => accept({}))}>
-              Join the team
+              Join {me.invitedTo[0] ?? 'the team'}
             </PrimaryButton>
           </>
+        ) : me.canCreate ? (
+          <form onSubmit={(e) => { e.preventDefault(); void run(() => create({ name })) }}>
+            <h1 className="mt-4 text-xl font-semibold">Create your hiring workspace</h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Your company's private space for assessments, candidates and reports. You'll be its owner and can invite
+              teammates by email.
+            </p>
+            <div className="mt-4">
+              <Field label="Company or team name" name="workspace" value={name} onChange={(v) => { setName(v); setError('') }} placeholder="Acme Engineering" />
+            </div>
+            <PrimaryButton type="submit" busy={busy}>Create workspace</PrimaryButton>
+          </form>
         ) : (
           <>
             <h1 className="mt-4 text-xl font-semibold">No access yet</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {me.email} isn't on this hiring team. Ask the workspace owner to invite this email address, then refresh
+              {me.email} isn't on a hiring team yet. Ask your workspace owner to invite this email address, then refresh
               this page.
             </p>
           </>

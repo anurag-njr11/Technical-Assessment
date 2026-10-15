@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { internalQuery, mutation, query } from "./_generated/server"
-import { requireRecruiter } from "./access"
+import { mine, own, requireMember, requireRecruiter } from "./access"
 import { outcomeValidator } from "./schema"
 import type { Doc } from "./_generated/dataModel"
 
@@ -15,7 +15,7 @@ export const label = mutation({
   },
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
-    const sub = await ctx.db.get(args.submissionId)
+    const sub = mine(me, await ctx.db.get(args.submissionId))
     if (!sub || !sub.result) throw new Error("Only graded submissions can be labelled.")
     const user = await ctx.db.get(me.userId)
     const grader = user?.email ?? me.email
@@ -40,6 +40,7 @@ export const label = mutation({
     const now = Date.now()
     for (const it of args.items) {
       await ctx.db.insert("goldenLabels", {
+        workspaceId: me.workspaceId,
         submissionId: args.submissionId,
         targetId: it.itemId,
         grader,
@@ -51,6 +52,7 @@ export const label = mutation({
     }
     if (args.overall !== undefined) {
       await ctx.db.insert("goldenLabels", {
+        workspaceId: me.workspaceId,
         submissionId: args.submissionId,
         targetId: "__overall",
         grader,
@@ -65,7 +67,8 @@ export const label = mutation({
 export const forSubmission = query({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    const me = await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     const rows = await ctx.db
       .query("goldenLabels")
       .withIndex("by_submission", (q) => q.eq("submissionId", args.id))
@@ -83,9 +86,10 @@ export const forSubmission = query({
 
 /** KA-1: human-graded comments used as few-shot calibration examples (RAG_EXAMPLES=on). */
 export const examplesInternal = internalQuery({
-  args: { scenarioId: v.string() },
+  args: { scenarioId: v.string(), workspaceId: v.optional(v.id("workspaces")) },
   handler: async (ctx, args) => {
-    const labels = await ctx.db.query("goldenLabels").take(2000)
+    // A workspace's few-shot examples come only from its own human labels.
+    const labels = await ctx.db.query("goldenLabels").withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId)).take(2000)
     const out: Array<{ itemId: string; text: string; identified: boolean }> = []
     const cache = new Map<string, Doc<"submissions"> | null>()
     for (const l of labels) {

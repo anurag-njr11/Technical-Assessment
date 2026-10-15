@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { internalMutation, internalQuery, query } from "./_generated/server"
-import { requireRecruiter } from "./access"
+import { own, requireMember } from "./access"
 
 // EX-2 / NFR-OBS-1: every judge call is logged with model, latency and output.
 
@@ -54,7 +54,8 @@ export const record = internalMutation({
 export const forSubmission = query({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     const rows = await ctx.db
       .query("judgeCalls")
       .withIndex("by_submission", (q) => q.eq("submissionId", args.id))

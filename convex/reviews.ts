@@ -2,7 +2,7 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import type { MutationCtx } from "./_generated/server"
 import type { Id } from "./_generated/dataModel"
-import { requireRecruiter } from "./access"
+import { mine, own, requireMember, requireRecruiter } from "./access"
 import { effectiveResult, loadOverrides } from "./submissions"
 import { outcomeValidator } from "./schema"
 import { SCENARIO_META } from "./answerKey"
@@ -23,8 +23,8 @@ async function reviewerEmail(ctx: MutationCtx, userId: Id<"users">) {
 export const queue = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)
+    const me = await requireMember(ctx)
+    const rows = await ctx.db.query("submissions").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(300)
     return rows
       .filter(
         (r) =>
@@ -50,7 +50,8 @@ export const queue = query({
 export const history = query({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     const rows = await ctx.db
       .query("reviews")
       .withIndex("by_submission", (q) => q.eq("submissionId", args.id))
@@ -98,7 +99,7 @@ export const overrideItem = mutation({
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
     const justification = checkJustification(args.justification)
-    const sub = await ctx.db.get(args.submissionId)
+    const sub = mine(me, await ctx.db.get(args.submissionId))
     if (!sub || sub.status !== "graded" || !sub.result) throw new Error("Only graded submissions can be reviewed.")
     const item = sub.result.items.find((i) => i.id === args.itemId)
     if (!item) throw new Error("Unknown item.")
@@ -130,6 +131,7 @@ export const overrideItem = mutation({
     })
     // Build faults are graded by code checks, not judges: they don't belong in the judge-accuracy golden set.
     if (!build) await ctx.db.insert("goldenLabels", {
+      workspaceId: me.workspaceId,
       submissionId: args.submissionId,
       targetId: item.id,
       grader: email,
@@ -148,7 +150,7 @@ export const overrideFinding = mutation({
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
     const justification = checkJustification(args.justification)
-    const sub = await ctx.db.get(args.submissionId)
+    const sub = mine(me, await ctx.db.get(args.submissionId))
     if (!sub || sub.status !== "graded" || !sub.result) throw new Error("Only graded submissions can be reviewed.")
     const finding = sub.result.trajectory?.findings.find((f) => f.id === args.findingId)
     if (!finding) throw new Error("Unknown finding.")
@@ -182,7 +184,7 @@ export const overrideComment = mutation({
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
     const justification = checkJustification(args.justification)
-    const sub = await ctx.db.get(args.submissionId)
+    const sub = mine(me, await ctx.db.get(args.submissionId))
     if (!sub || sub.status !== "graded" || !sub.result) throw new Error("Only graded submissions can be reviewed.")
     const extra = sub.result.extraComments.find((e) => e.commentId === args.commentId)
     if (!extra) throw new Error("That comment was not classified by the panel.")
@@ -206,7 +208,7 @@ export const resolve = mutation({
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
     const note = checkJustification(args.note)
-    const sub = await ctx.db.get(args.submissionId)
+    const sub = mine(me, await ctx.db.get(args.submissionId))
     if (!sub || sub.status !== "graded") throw new Error("Only graded submissions can be resolved.")
     await ctx.db.patch(args.submissionId, {
       humanReview: { status: "resolved", by: await reviewerEmail(ctx, me.userId), at: Date.now(), note },

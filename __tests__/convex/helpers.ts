@@ -113,7 +113,7 @@ export async function seedUser(t: T, email: string, verified = true) {
 
 export async function seedOwner(t: T, email = "owner@acme.com") {
   const owner = await seedUser(t, email)
-  await t.withIdentity({ subject: owner }).mutation(api.access.claimWorkspace, {})
+  await t.withIdentity({ subject: owner }).mutation(api.access.createWorkspace, { name: "Acme" })
   return t.withIdentity({ subject: owner })
 }
 

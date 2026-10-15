@@ -1,7 +1,8 @@
 import { v } from "convex/values"
 import { internalQuery, mutation, query } from "./_generated/server"
 import type { QueryCtx } from "./_generated/server"
-import { requireOwner, requireRecruiter } from "./access"
+import { requireMember, requireOwner } from "./access"
+import type { Id } from "./_generated/dataModel"
 import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
 import type { AnswerKey } from "./answerKey"
 import { MIN_2PL, fourFifths, irt as fitIrt } from "./metrics"
@@ -31,9 +32,9 @@ export function applyConfig(key: AnswerKey, config: Config): { key: AnswerKey; n
   return { key: { ...key, items }, note }
 }
 
-async function loadConfig(ctx: QueryCtx): Promise<Config> {
-  const settings = await ctx.db.query("itemSettings").take(500)
-  const emphasis = await ctx.db.query("emphasis").take(100)
+async function loadConfig(ctx: QueryCtx, workspaceId: Id<"workspaces"> | undefined): Promise<Config> {
+  const settings = await ctx.db.query("itemSettings").withIndex("by_workspace_scenario", (q) => q.eq("workspaceId", workspaceId)).take(500)
+  const emphasis = await ctx.db.query("emphasis").withIndex("by_workspace_category", (q) => q.eq("workspaceId", workspaceId)).take(100)
   return {
     disabled: settings.filter((s) => !s.enabled).map((s) => ({ scenarioId: s.scenarioId, itemId: s.itemId })),
     emphasis: Object.fromEntries(emphasis.map((e) => [e.category, e.multiplier])),
@@ -41,13 +42,13 @@ async function loadConfig(ctx: QueryCtx): Promise<Config> {
 }
 
 export const configInternal = internalQuery({
-  args: { scenarioId: v.string() },
-  handler: async (ctx) => loadConfig(ctx),
+  args: { scenarioId: v.string(), workspaceId: v.optional(v.id("workspaces")) },
+  handler: async (ctx, args) => loadConfig(ctx, args.workspaceId),
 })
 
 /** FB-6: what the four-fifths rule would say if every graded submission were scored under `config`. */
-async function adverseImpactUnder(ctx: QueryCtx, config: Config) {
-  const subs = (await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)).filter(
+async function adverseImpactUnder(ctx: QueryCtx, workspaceId: Id<"workspaces">, config: Config) {
+  const subs = (await ctx.db.query("submissions").withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId)).order("desc").take(300)).filter(
     (s) => s.status === "graded" && s.candidateId && (s.machineResult ?? s.result),
   )
   const groups = new Map<string, { n: number; passed: number }>()
@@ -80,9 +81,9 @@ async function adverseImpactUnder(ctx: QueryCtx, config: Config) {
 export const stats = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const config = await loadConfig(ctx)
-    const subs = (await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)).filter(
+    const me = await requireMember(ctx)
+    const config = await loadConfig(ctx, me.workspaceId)
+    const subs = (await ctx.db.query("submissions").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(300)).filter(
       (s) => s.status === "graded" && s.result,
     )
     const scenarios = Object.entries(SCENARIO_META)
@@ -128,7 +129,7 @@ export const stats = query({
     return {
       scenarios,
       emphasis: categories.map((c) => ({ category: c, multiplier: config.emphasis[c] ?? 1 })),
-      adverseImpact: await adverseImpactUnder(ctx, config),
+      adverseImpact: await adverseImpactUnder(ctx, me.workspaceId, config),
       limits: { min: EMPHASIS_MIN, max: EMPHASIS_MAX },
     }
   },
@@ -147,7 +148,7 @@ export const setEnabled = mutation({
     const item = key?.items.find((i) => i.id === args.itemId)
     if (!item) throw new Error("Unknown item.")
     if (item.kind === "decoy" && !args.enabled) throw new Error("Decoys can't be disabled: they measure false alarms.")
-    const rows = await ctx.db.query("itemSettings").withIndex("by_scenario", (q) => q.eq("scenarioId", args.scenarioId)).collect()
+    const rows = await ctx.db.query("itemSettings").withIndex("by_workspace_scenario", (q) => q.eq("workspaceId", me.workspaceId).eq("scenarioId", args.scenarioId)).collect()
     const disabledNow = new Set(rows.filter((r) => !r.enabled).map((r) => r.itemId))
     if (args.enabled) disabledNow.delete(args.itemId)
     else disabledNow.add(args.itemId)
@@ -159,8 +160,8 @@ export const setEnabled = mutation({
     const existing = rows.find((r) => r.itemId === args.itemId)
     const patch = { enabled: args.enabled, updatedBy: await whoami(ctx, me.userId), updatedAt: Date.now() }
     if (existing) await ctx.db.patch(existing._id, patch)
-    else await ctx.db.insert("itemSettings", { scenarioId: args.scenarioId, itemId: args.itemId, ...patch })
-    return await adverseImpactUnder(ctx, await loadConfig(ctx))
+    else await ctx.db.insert("itemSettings", { workspaceId: me.workspaceId, scenarioId: args.scenarioId, itemId: args.itemId, ...patch })
+    return await adverseImpactUnder(ctx, me.workspaceId, await loadConfig(ctx, me.workspaceId))
   },
 })
 
@@ -171,10 +172,10 @@ export const setEmphasis = mutation({
     if (!(args.multiplier >= EMPHASIS_MIN && args.multiplier <= EMPHASIS_MAX)) {
       throw new Error(`Emphasis must stay between ${EMPHASIS_MIN}× and ${EMPHASIS_MAX}× (validated range).`)
     }
-    const row = await ctx.db.query("emphasis").withIndex("by_category", (q) => q.eq("category", args.category)).unique()
+    const row = await ctx.db.query("emphasis").withIndex("by_workspace_category", (q) => q.eq("workspaceId", me.workspaceId).eq("category", args.category)).unique()
     const patch = { multiplier: Math.round(args.multiplier * 100) / 100, updatedBy: await whoami(ctx, me.userId), updatedAt: Date.now() }
     if (row) await ctx.db.patch(row._id, patch)
-    else await ctx.db.insert("emphasis", { category: args.category, ...patch })
-    return await adverseImpactUnder(ctx, await loadConfig(ctx))
+    else await ctx.db.insert("emphasis", { workspaceId: me.workspaceId, category: args.category, ...patch })
+    return await adverseImpactUnder(ctx, me.workspaceId, await loadConfig(ctx, me.workspaceId))
   },
 })

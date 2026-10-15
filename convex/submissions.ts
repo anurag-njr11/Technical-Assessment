@@ -10,7 +10,7 @@ import type { Doc, Id } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
 import { commentValidator, resultValidator, verdictValidator } from "./schema"
 import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
-import { requireOwner, requireRecruiter } from "./access"
+import { mine, own, requireMember, requireOwner, requireRecruiter } from "./access"
 import { requireActive } from "./candidates"
 import { LIMITS, hit } from "./rateLimit"
 import { applyOverrides } from "./scoring"
@@ -70,6 +70,7 @@ export async function insertSubmission(
       ? decisionComment(meta.followUps, work.answers)
       : work.comments
   const id = await ctx.db.insert("submissions", {
+    workspaceId: candidate.workspaceId,
     candidateName: candidate.name,
     candidateId: candidate._id,
     scenarioId: candidate.scenarioId,
@@ -105,7 +106,8 @@ export const submit = mutation({
   },
   handler: async (ctx, args) => {
     const candidate = await requireActive(ctx, args.token)
-    await hit(ctx, "submit:global", LIMITS.submitsPerHour())
+    // Per workspace, so one company's traffic can't exhaust another's judge budget.
+    await hit(ctx, `submit:${candidate.workspaceId ?? "global"}`, LIMITS.submitsPerHour())
     const meta = SCENARIO_META[candidate.scenarioId]
     if (meta.kind === "build") {
       const code = args.code ?? ""
@@ -149,10 +151,10 @@ export const submit = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
     const rows = await ctx.db
       .query("submissions")
-      .withIndex("by_submittedAt")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId))
       .order("desc")
       .take(100)
     return rows.map((r) => ({
@@ -180,19 +182,18 @@ export const list = query({
 export const get = query({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
     const id = ctx.db.normalizeId("submissions", args.id)
     if (!id) return null
-    return await ctx.db.get(id)
+    return mine(me, await ctx.db.get(id))
   },
 })
 
 export const regrade = mutation({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const row = await ctx.db.get(args.id)
-    if (!row) throw new Error("Submission not found.")
+    const me = await requireRecruiter(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     await ctx.db.patch(args.id, { status: "grading", error: undefined })
     await ctx.scheduler.runAfter(0, internal.grading.grade, { submissionId: args.id })
   },
@@ -202,8 +203,8 @@ export const regrade = mutation({
 export const retryPaused = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const rows = await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(500)
+    const me = await requireRecruiter(ctx)
+    const rows = await ctx.db.query("submissions").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(500)
     const paused = rows.filter((r) => r.status === "error" && r.error === PAUSED)
     for (const [i, r] of paused.entries()) {
       await ctx.db.patch(r._id, { status: "grading", error: undefined })
@@ -239,7 +240,8 @@ export async function deleteCandidate(ctx: MutationCtx, id: Id<"candidates">) {
 export const remove = mutation({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireOwner(ctx)
+    const me = await requireOwner(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     await deleteSubmission(ctx, args.id)
   },
 })
@@ -248,9 +250,9 @@ export const remove = mutation({
 export const setReleased = mutation({
   args: { id: v.id("submissions"), released: v.boolean() },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const row = await ctx.db.get(args.id)
-    if (!row || row.status !== "graded") throw new Error("Only graded submissions can be shared.")
+    const me = await requireRecruiter(ctx)
+    const row = own(me, await ctx.db.get(args.id), "Submission not found.")
+    if (row.status !== "graded") throw new Error("Only graded submissions can be shared.")
     await ctx.db.patch(args.id, { released: args.released })
   },
 })
@@ -295,7 +297,7 @@ export function effectiveResult(sub: Doc<"submissions">, machine: Result, overri
 export async function writeMetricRow(ctx: MutationCtx, s: Doc<"submissions">): Promise<boolean> {
   const machine = s.machineResult ?? s.result
   if (!machine) return false
-  const row = { submissionId: s._id, scenarioId: s.scenarioId, submittedAt: s.submittedAt, machine: slim(machine) }
+  const row = { workspaceId: s.workspaceId, submissionId: s._id, scenarioId: s.scenarioId, submittedAt: s.submittedAt, machine: slim(machine) }
   const existing = await ctx.db.query("metricRows").withIndex("by_submission", (q) => q.eq("submissionId", s._id)).unique()
   if (existing) await ctx.db.replace(existing._id, row)
   else await ctx.db.insert("metricRows", row)

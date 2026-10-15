@@ -529,9 +529,9 @@ export const grade = internalAction({
     const traces: Trace[] = []
     try {
       const meta = SCENARIO_META[sub.scenarioId]
-      const config = await ctx.runQuery(internal.items.configInternal, { scenarioId: sub.scenarioId })
+      const config = await ctx.runQuery(internal.items.configInternal, { scenarioId: sub.scenarioId, workspaceId: sub.workspaceId })
       const examples = process.env.RAG_EXAMPLES === "on"
-        ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId })
+        ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId, workspaceId: sub.workspaceId })
         : []
       const configured = applyConfig(key, config)
       const ask = liveAsker(traces, cache)

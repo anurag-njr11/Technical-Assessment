@@ -267,10 +267,22 @@ export const scoreSummaryValidator = v.object({
 export default defineSchema({
   ...authTables,
 
+  // A company's hiring workspace (multi-tenant). Every recruiter-facing row
+  // carries workspaceId; candidates reach rows only through their own tokens.
+  workspaces: defineTable({
+    name: v.string(),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    // The public demo workspace: anyone can join it as a viewer; reset nightly.
+    demo: v.optional(v.boolean()),
+  }).index("by_demo", ["demo"]),
+
   // One row per candidate attempt. `result` is the effective result (machine
   // grade with any human overrides applied); `machineResult` is the untouched
   // council output so overrides can always be recomputed deterministically.
   submissions: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     candidateName: v.string(),
     candidateId: v.optional(v.id("candidates")),
     scenarioId: v.string(),
@@ -310,11 +322,14 @@ export default defineSchema({
       }),
     ),
     submittedAt: v.number(),
-  }).index("by_submittedAt", ["submittedAt"]),
+  }).index("by_submittedAt", ["submittedAt"])
+    .index("by_workspace", ["workspaceId", "submittedAt"]),
 
   // A recruiter-created assessment: one reusable link / QR code per role config.
   // Opening the link creates a `candidates` row (with its own token).
   assessments: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     title: v.string(),
     role: v.string(), // "AI Engineer", "Backend Engineer", ...
     scenarioId: v.string(),
@@ -327,10 +342,13 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_token", ["token"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_workspace", ["workspaceId", "createdAt"]),
 
   // FR-C-12: a recruiter-created candidate with a single-use invite token.
   candidates: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     name: v.string(),
     email: v.optional(v.string()),
     scenarioId: v.string(),
@@ -362,7 +380,8 @@ export default defineSchema({
     .index("by_token", ["token"])
     .index("by_assessment", ["assessmentId"])
     .index("by_group", ["groupToken"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_workspace", ["workspaceId", "createdAt"]),
 
   // FR-C-13: server-side draft of an in-progress attempt.
   autosaves: defineTable({
@@ -380,18 +399,24 @@ export default defineSchema({
 
   // SB-4 / CU-2: workspace scoring configuration within validated guardrails.
   itemSettings: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     scenarioId: v.string(),
     itemId: v.string(),
     enabled: v.boolean(),
     updatedBy: v.string(),
     updatedAt: v.number(),
-  }).index("by_scenario", ["scenarioId"]),
+  }).index("by_scenario", ["scenarioId"])
+    .index("by_workspace_scenario", ["workspaceId", "scenarioId"]),
   emphasis: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     category: v.string(),
     multiplier: v.number(),
     updatedBy: v.string(),
     updatedAt: v.number(),
-  }).index("by_category", ["category"]),
+  }).index("by_category", ["category"])
+    .index("by_workspace_category", ["workspaceId", "category"]),
 
   // CU-7: hiring outcome and 6-month manager rating, for predictive validity.
   outcomes: defineTable({
@@ -404,13 +429,16 @@ export default defineSchema({
 
   // EX-5: experiment log.
   experiments: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     hypothesis: v.string(),
     change: v.string(),
     result: v.string(),
     decision: v.union(v.literal("adopt"), v.literal("reject"), v.literal("pending")),
     by: v.string(),
     at: v.number(),
-  }),
+  })
+    .index("by_workspace", ["workspaceId"]),
 
   // SEC-15: fixed-window counters for public endpoints.
   rateLimits: defineTable({
@@ -438,6 +466,8 @@ export default defineSchema({
   // REL-1: human grades used to measure the council. One row per grader per
   // target ("I1", "D1", or "__overall" for a holistic 0-100 score).
   goldenLabels: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     submissionId: v.id("submissions"),
     targetId: v.string(),
     grader: v.string(),
@@ -448,10 +478,13 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_submission", ["submissionId"])
-    .index("by_grader", ["grader"]),
+    .index("by_grader", ["grader"])
+    .index("by_workspace", ["workspaceId"]),
 
   // REL-3 / FB-2 / REL-7 / REL-10: offline evaluation runs.
   evalRuns: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     kind: v.union(
       v.literal("retest"),
       v.literal("perturbation"),
@@ -470,11 +503,14 @@ export default defineSchema({
     startedBy: v.string(),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
-  }).index("by_kind", ["kind", "startedAt"]),
+  }).index("by_kind", ["kind", "startedAt"])
+    .index("by_workspace_kind", ["workspaceId", "kind", "startedAt"]),
 
   // REL-8: the slice of each machine result the reliability dashboard needs
   // (see dashboard.slim), so it can cover thousands of submissions.
   metricRows: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     submissionId: v.id("submissions"),
     scenarioId: v.string(),
     submittedAt: v.number(),
@@ -496,15 +532,19 @@ export default defineSchema({
     }),
   })
     .index("by_submission", ["submissionId"])
-    .index("by_submittedAt", ["submittedAt"]),
+    .index("by_submittedAt", ["submittedAt"])
+    .index("by_workspace", ["workspaceId", "submittedAt"]),
 
   // EX-3: the same live submission graded by a candidate panel (SHADOW_PANEL_JSON).
   shadowResults: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     submissionId: v.id("submissions"),
     models: v.array(v.string()),
     summary: scoreSummaryValidator,
     at: v.number(),
-  }).index("by_submission", ["submissionId"]),
+  }).index("by_submission", ["submissionId"])
+    .index("by_workspace", ["workspaceId"]),
 
   // §21.2: cached judge replies (see judges.liveAsker); purged after 30 days.
   judgeCache: defineTable({
@@ -538,17 +578,24 @@ export default defineSchema({
   // Hiring-team members allowed to see results and answer keys.
   // The first verified account becomes the owner; others join by invite.
   recruiters: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     userId: v.id("users"),
     email: v.string(),
-    role: v.union(v.literal("owner"), v.literal("recruiter")),
+    // viewer: read-only member of the public demo workspace.
+    role: v.union(v.literal("owner"), v.literal("recruiter"), v.literal("viewer")),
     joinedAt: v.number(),
   })
     .index("by_userId", ["userId"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_workspace", ["workspaceId"]),
 
   invites: defineTable({
+    // Tenant. Optional only so rows written before workspaces can be migrated (workspaces:migrate).
+    workspaceId: v.optional(v.id("workspaces")),
     email: v.string(),
     invitedBy: v.id("users"),
     createdAt: v.number(),
-  }).index("by_email", ["email"]),
+  }).index("by_email", ["email"])
+    .index("by_workspace", ["workspaceId"]),
 })

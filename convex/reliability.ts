@@ -3,7 +3,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import type { Id } from "./_generated/dataModel"
 import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { internal } from "./_generated/api"
-import { requireOwner, requireRecruiter } from "./access"
+import { own, requireMember, requireOwner, requireRecruiter } from "./access"
 import { ANSWER_KEYS } from "./answerKey"
 import { gradeSubmission } from "./grading"
 import { writeMetricRow } from "./submissions"
@@ -33,15 +33,23 @@ function versions() {
   return { rubric: RUBRIC_VERSION, prompt: PROMPT_VERSION, scoring: SCORING_VERSION }
 }
 
+/** Submissions in the workspace's golden set (any human label), newest labels first. */
+async function goldenIds(ctx: QueryCtx, workspaceId: Id<"workspaces"> | undefined) {
+  const labels = await ctx.db.query("goldenLabels").withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId)).order("desc").take(5000)
+  return [...new Set(labels.map((l) => l.submissionId as string))].slice(0, MAX_GOLDEN)
+}
+
 async function createRun(
   ctx: MutationCtx,
   kind: "retest" | "perturbation" | "golden" | "adversarial",
   plan: string[],
   startedBy: string,
+  workspaceId: Id<"workspaces"> | undefined,
   submissionId?: Id<"submissions">,
 ) {
   if (plan.length === 0) throw new Error("Nothing to evaluate.")
   const runId = await ctx.db.insert("evalRuns", {
+    workspaceId,
     kind,
     submissionId,
     status: "running",
@@ -60,9 +68,8 @@ export const startRetest = mutation({
   args: { submissionId: v.id("submissions") },
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
-    const sub = await ctx.db.get(args.submissionId)
-    if (!sub) throw new Error("Submission not found.")
-    return await createRun(ctx, "retest", Array.from({ length: RETEST_RUNS }, (_, i) => `run-${i + 1}`), me.email, args.submissionId)
+    own(me, await ctx.db.get(args.submissionId), "Submission not found.")
+    return await createRun(ctx, "retest", Array.from({ length: RETEST_RUNS }, (_, i) => `run-${i + 1}`), me.email, me.workspaceId, args.submissionId)
   },
 })
 
@@ -70,9 +77,8 @@ export const startPerturbation = mutation({
   args: { submissionId: v.id("submissions") },
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
-    const sub = await ctx.db.get(args.submissionId)
-    if (!sub) throw new Error("Submission not found.")
-    return await createRun(ctx, "perturbation", PERTURBATIONS.map((p) => p.name), me.email, args.submissionId)
+    own(me, await ctx.db.get(args.submissionId), "Submission not found.")
+    return await createRun(ctx, "perturbation", PERTURBATIONS.map((p) => p.name), me.email, me.workspaceId, args.submissionId)
   },
 })
 
@@ -80,7 +86,7 @@ export const startAdversarial = mutation({
   args: {},
   handler: async (ctx) => {
     const me = await requireRecruiter(ctx)
-    return await createRun(ctx, "adversarial", ADVERSARIAL_CASES.map((c) => c.label), me.email)
+    return await createRun(ctx, "adversarial", ADVERSARIAL_CASES.map((c) => c.label), me.email, me.workspaceId)
   },
 })
 
@@ -88,19 +94,17 @@ export const startGolden = mutation({
   args: {},
   handler: async (ctx) => {
     const me = await requireRecruiter(ctx)
-    const labels = await ctx.db.query("goldenLabels").take(5000)
-    const ids = [...new Set(labels.map((l) => l.submissionId as string))].slice(0, MAX_GOLDEN)
-    return await createRun(ctx, "golden", ids, me.email)
+    return await createRun(ctx, "golden", await goldenIds(ctx, me.workspaceId), me.email, me.workspaceId)
   },
 })
 
 export const setBaseline = mutation({
   args: { runId: v.id("evalRuns") },
   handler: async (ctx, args) => {
-    await requireOwner(ctx)
-    const run = await ctx.db.get(args.runId)
-    if (!run || run.kind !== "golden" || run.status !== "done") throw new Error("Only a finished golden-set run can be the baseline.")
-    const others = await ctx.db.query("evalRuns").withIndex("by_kind", (q) => q.eq("kind", "golden")).collect()
+    const me = await requireOwner(ctx)
+    const run = own(me, await ctx.db.get(args.runId), "Run not found.")
+    if (run.kind !== "golden" || run.status !== "done") throw new Error("Only a finished golden-set run can be the baseline.")
+    const others = await ctx.db.query("evalRuns").withIndex("by_workspace_kind", (q) => q.eq("workspaceId", me.workspaceId).eq("kind", "golden")).collect()
     for (const o of others) if (o.baseline) await ctx.db.patch(o._id, { baseline: false })
     await ctx.db.patch(args.runId, { baseline: true })
   },
@@ -176,9 +180,11 @@ export const shadow = internalAction({
 export const saveShadow = internalMutation({
   args: { submissionId: v.id("submissions"), models: v.array(v.string()), summary: scoreSummaryValidator },
   handler: async (ctx, args) => {
+    const sub = await ctx.db.get(args.submissionId)
+    if (!sub) return
     const old = await ctx.db.query("shadowResults").withIndex("by_submission", (q) => q.eq("submissionId", args.submissionId)).unique()
     if (old) await ctx.db.delete(old._id)
-    await ctx.db.insert("shadowResults", { ...args, at: Date.now() })
+    await ctx.db.insert("shadowResults", { ...args, workspaceId: sub.workspaceId, at: Date.now() })
   },
 })
 
@@ -247,15 +253,17 @@ export const step = internalAction({
 const m1Overall = (m: Slim) =>
   overallFrom(Object.fromEntries(Object.entries(m.components).map(([k, c]) => [k, c.value])) as ComponentVec, m.weights as ComponentVec)
 
-async function loadDashboard(ctx: QueryCtx) {
+async function loadDashboard(ctx: QueryCtx, workspaceId: Id<"workspaces"> | undefined) {
   // Slim rows (~2 KB each, written at grading time) keep this inside per-query read limits.
-  const rows = await ctx.db.query("metricRows").withIndex("by_submittedAt").order("desc").take(2000)
+  const rows = await ctx.db.query("metricRows").withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId)).order("desc").take(2000)
   const subs = rows.map((r) => ({ _id: r.submissionId as string, scenarioId: r.scenarioId, submittedAt: r.submittedAt, machine: r.machine }))
-  const labels = (await ctx.db.query("goldenLabels").take(8000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
-  const runs = await ctx.db.query("evalRuns").order("desc").take(200)
+  const labels = (await ctx.db.query("goldenLabels").withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId)).take(8000)).map((l) => ({ ...l, submissionId: l.submissionId as string }))
+  const runs = (await ctx.db.query("evalRuns").withIndex("by_workspace_kind", (q) => q.eq("workspaceId", workspaceId)).collect())
+    .sort((a, b) => b._creationTime - a._creationTime)
+    .slice(0, 200)
   // EX-3: live (M1 machine) vs shadow panel on the same submissions.
   const live = new Map(rows.map((r) => [r.submissionId as string, r.machine]))
-  const shadows = (await ctx.db.query("shadowResults").order("desc").take(500)).filter((x) => live.has(x.submissionId))
+  const shadows = (await ctx.db.query("shadowResults").withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId)).order("desc").take(500)).filter((x) => live.has(x.submissionId))
   const shadow = shadows.length
     ? {
         n: shadows.length,
@@ -286,12 +294,13 @@ async function loadDashboard(ctx: QueryCtx) {
 // ---------------------------------------------------------------------------
 
 export const ciStartGolden = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const labels = await ctx.db.query("goldenLabels").take(5000)
-    const ids = [...new Set(labels.map((l) => l.submissionId as string))].slice(0, MAX_GOLDEN)
+  // Defaults to the oldest non-demo workspace (the deployment owner's).
+  args: { workspaceId: v.optional(v.id("workspaces")) },
+  handler: async (ctx, args) => {
+    const workspaceId = args.workspaceId ?? (await ctx.db.query("workspaces").collect()).find((w) => !w.demo)?._id
+    const ids = await goldenIds(ctx, workspaceId)
     if (!ids.length) return null
-    return await createRun(ctx, "golden", ids, "ci")
+    return await createRun(ctx, "golden", ids, "ci", workspaceId)
   },
 })
 
@@ -301,7 +310,7 @@ export const ciGateStatus = internalQuery({
     const run = await ctx.db.get(args.runId)
     if (!run) return { status: "error" as const, error: "run not found" }
     if (run.status !== "done") return { status: run.status, done: run.runs.length, total: run.plan.length, error: run.error ?? null }
-    const { data } = await loadDashboard(ctx)
+    const { data } = await loadDashboard(ctx, run.workspaceId)
     return { status: "done" as const, gate: data.gate && data.gate.candidateId === run._id ? data.gate : null }
   },
 })
@@ -309,8 +318,8 @@ export const ciGateStatus = internalQuery({
 export const dashboard = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const { data, runs } = await loadDashboard(ctx)
+    const me = await requireMember(ctx)
+    const { data, runs } = await loadDashboard(ctx, me.workspaceId)
     const recent = runs.slice(0, 20).map((r) => ({
       _id: r._id,
       kind: r.kind,

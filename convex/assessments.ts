@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server"
 import type { QueryCtx } from "./_generated/server"
 import type { Doc } from "./_generated/dataModel"
 import { SCENARIO_META } from "./answerKey"
-import { requireRecruiter } from "./access"
+import { mine, own, requireMember, requireRecruiter } from "./access"
 import { hit } from "./rateLimit"
 import { newToken } from "./candidates"
 import { internal } from "./_generated/api"
@@ -62,6 +62,7 @@ export const create = mutation({
     const title = args.title?.trim().slice(0, 120) || `${args.role} · ${meta.title}`
     const token = newToken()
     const id = await ctx.db.insert("assessments", {
+      workspaceId: me.workspaceId,
       title,
       role: args.role,
       scenarioId: args.scenarioId,
@@ -80,8 +81,8 @@ export const create = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const rows = await ctx.db.query("assessments").withIndex("by_createdAt").order("desc").take(100)
+    const me = await requireMember(ctx)
+    const rows = await ctx.db.query("assessments").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(100)
     return await Promise.all(
       rows.map(async (a) => {
         const cands = await candidatesOf(ctx, a)
@@ -104,8 +105,8 @@ export const list = query({
 export const get = query({
   args: { id: v.id("assessments") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const a = await ctx.db.get(args.id)
+    const me = await requireMember(ctx)
+    const a = mine(me, await ctx.db.get(args.id))
     if (!a) return null
     const cands = await candidatesOf(ctx, a)
     const candidates = await Promise.all(
@@ -141,7 +142,7 @@ export const emailLink = mutation({
   args: { id: v.id("assessments"), emails: v.array(v.string()) },
   handler: async (ctx, args) => {
     const me = await requireRecruiter(ctx)
-    const a = await ctx.db.get(args.id)
+    const a = mine(me, await ctx.db.get(args.id))
     if (!a) throw new Error("Assessment not found.")
     if (a.status !== "active") throw new Error("Reopen the assessment before sending its link.")
     const emails = [...new Set(args.emails.map((e) => e.trim().toLowerCase()).filter(Boolean))]
@@ -164,8 +165,8 @@ export const emailLink = mutation({
 export const setStatus = mutation({
   args: { id: v.id("assessments"), status: v.union(v.literal("active"), v.literal("closed")) },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    if (!(await ctx.db.get(args.id))) throw new Error("Assessment not found.")
+    const me = await requireRecruiter(ctx)
+    own(me, await ctx.db.get(args.id), "Assessment not found.")
     await ctx.db.patch(args.id, { status: args.status })
   },
 })
@@ -211,6 +212,7 @@ export const join = mutation({
     }
     const candidateToken = newToken()
     await ctx.db.insert("candidates", {
+      workspaceId: a.workspaceId,
       name,
       email,
       scenarioId: a.scenarioId,

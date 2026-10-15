@@ -1,7 +1,8 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import type { QueryCtx } from "./_generated/server"
-import { requireRecruiter } from "./access"
+import { mine, own, requireMember, requireRecruiter } from "./access"
+import type { Member } from "./access"
 import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
 import { MIN_2PL, fourFifths, irt, pearson } from "./metrics"
 import { PASS_SCORE } from "./items"
@@ -9,8 +10,8 @@ import { PASS_SCORE } from "./items"
 // Per-submission context (SCR-3 ability, SCR-5/CU-6 local norms, CU-7 outcome)
 // and workspace-level fairness and validity (FB-3, SM-6, CU-7, EX-5).
 
-async function recent(ctx: QueryCtx) {
-  return (await ctx.db.query("submissions").withIndex("by_submittedAt").order("desc").take(300)).filter(
+async function recent(ctx: QueryCtx, me: Member) {
+  return (await ctx.db.query("submissions").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(300)).filter(
     (s) => s.status === "graded" && s.result,
   )
 }
@@ -23,10 +24,10 @@ async function emailOf(ctx: QueryCtx, userId: string) {
 export const forSubmission = query({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const sub = await ctx.db.get(args.id)
+    const me = await requireMember(ctx)
+    const sub = mine(me, await ctx.db.get(args.id))
     if (!sub || !sub.result) return null
-    const peers = (await recent(ctx)).filter((s) => s.scenarioId === sub.scenarioId)
+    const peers = (await recent(ctx, me)).filter((s) => s.scenarioId === sub.scenarioId)
 
     // Local norms: percentile among the company's own engineers on this scenario.
     const bench: number[] = []
@@ -71,6 +72,7 @@ export const setOutcome = mutation({
     const me = await requireRecruiter(ctx)
     if (args.rating !== undefined && ![1, 2, 3, 4, 5].includes(args.rating)) throw new Error("Rating must be 1–5.")
     if (args.rating !== undefined && !args.hired) throw new Error("Only hired candidates get a manager rating.")
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     const row = await ctx.db.query("outcomes").withIndex("by_submission", (q) => q.eq("submissionId", args.id)).unique()
     const patch = { hired: args.hired, rating: args.rating, recordedBy: await emailOf(ctx, me.userId), at: Date.now() }
     if (row) await ctx.db.patch(row._id, patch)
@@ -81,8 +83,8 @@ export const setOutcome = mutation({
 export const workspace = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const subs = await recent(ctx)
+    const me = await requireMember(ctx)
+    const subs = await recent(ctx, me)
 
     // FB-3 / SM-6: selection rate (score >= Meets bar) per self-identified group.
     const groups = new Map<string, { n: number; passed: number }>()
@@ -105,7 +107,7 @@ export const workspace = query({
     }
     const validity = { n: pairs.length, r: pearson(pairs.map((p) => p.score), pairs.map((p) => p.rating)) }
 
-    const experiments = (await ctx.db.query("experiments").order("desc").take(50)).map((e) => ({
+    const experiments = (await ctx.db.query("experiments").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(50)).map((e) => ({
       _id: e._id, hypothesis: e.hypothesis, change: e.change, result: e.result, decision: e.decision, by: e.by, at: e.at,
     }))
     const byModule = Object.entries(SCENARIO_META).map(([id, m]) => {
@@ -131,6 +133,7 @@ export const addExperiment = mutation({
       return t
     }
     await ctx.db.insert("experiments", {
+      workspaceId: me.workspaceId,
       hypothesis: clean(args.hypothesis, "hypothesis"),
       change: clean(args.change, "change"),
       result: args.result.trim().slice(0, 2000),

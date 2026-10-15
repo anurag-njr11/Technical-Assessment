@@ -5,7 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
 import { commentValidator, verdictValidator } from "./schema"
 import { BATTERIES, SCENARIO_META } from "./answerKey"
-import { requireRecruiter } from "./access"
+import { own, requireMember, requireRecruiter } from "./access"
 import { LIMITS, hit } from "./rateLimit"
 import { insertSubmission, validateWork } from "./submissions"
 import { siteUrl } from "./email"
@@ -90,6 +90,7 @@ export const create = mutation({
     for (const scenarioId of scenarioIds) {
       const token = newToken()
       const id = await ctx.db.insert("candidates", {
+        workspaceId: me.workspaceId,
         name,
         email,
         scenarioId,
@@ -121,8 +122,8 @@ export const create = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const rows = await ctx.db.query("candidates").withIndex("by_createdAt").order("desc").take(200)
+    const me = await requireMember(ctx)
+    const rows = await ctx.db.query("candidates").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(200)
     return rows.map((c) => ({
       _id: c._id,
       name: c.name,
@@ -144,9 +145,8 @@ export const list = query({
 export const revoke = mutation({
   args: { id: v.id("candidates") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const c = await ctx.db.get(args.id)
-    if (!c) return
+    const me = await requireRecruiter(ctx)
+    const c = own(me, await ctx.db.get(args.id), "Candidate not found.")
     if (c.status === "submitted") throw new Error("This candidate has already submitted.")
     await ctx.db.patch(args.id, { status: "revoked" })
   },
