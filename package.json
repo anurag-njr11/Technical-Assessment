@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "eval": "tsx evals/run.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.2",
@@ -64,6 +65,7 @@
     "convex-test": "^0.0.53",
     "jsdom": "^28.1.0",
     "nitro": "^3.0.260522-beta",
+    "tsx": "^4.23.15",
     "typescript": "~7.0.2",
     "vite": "^8.1.5",
     "vite-tsconfig-paths": "^6.1.1",
