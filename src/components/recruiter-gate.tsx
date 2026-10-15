@@ -55,9 +55,22 @@ export function RecruiterPage({
   children?: React.ReactNode
 }) {
   return (
-    <Page nav={<RecruiterNav />} right={<>{right}<SignOutButton /></>}>
+    <Page nav={<RecruiterNav />} right={<>{right}<WorkspaceBadge /><SignOutButton /></>}>
       {loading ? <PageSpinner /> : children}
     </Page>
+  )
+}
+
+/** Which company's workspace you're in; demo visitors see that it is read-only. */
+function WorkspaceBadge() {
+  const me = useQuery(api.access.me)
+  const ws = me?.signedIn ? me.workspace : null
+  if (!ws) return null
+  return (
+    <span className="hidden max-w-48 items-center gap-1.5 truncate rounded-lg border border-border px-2.5 py-1.5 text-sm text-muted-foreground md:inline-flex" title={`Workspace: ${ws.name}`}>
+      <span className="truncate font-medium text-foreground">{ws.name}</span>
+      {me?.signedIn && me.role === 'viewer' ? <span className="rounded bg-accent px-1.5 text-[11px] font-semibold text-accent-foreground">Demo · read-only</span> : null}
+    </span>
   )
 }
 
