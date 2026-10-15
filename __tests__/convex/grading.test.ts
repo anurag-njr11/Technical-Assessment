@@ -203,3 +203,16 @@ describe("budget guard", () => {
     expect(after.result!.reviewReasons.join(" ")).not.toMatch(/unavailable/)
   })
 })
+
+describe("item-to-comment linking", () => {
+  it("without a positive verdict, links the nearest comment rather than the first one seen", async () => {
+    const t = makeT()
+    for (const m of ALL_MODELS) modes[m] = "down"
+    const { result } = await submitAndGrade(t, [
+      { id: "far", file: "orders/views.py", line: 14, severity: "low", text: "per_page parsing could use a helper." },
+      { id: "near", file: "orders/views.py", line: 16, severity: "high", text: "This offset looks wrong for page 1." },
+    ])
+    expect(result.items.find((i) => i.id === "I2")!.commentId).toBe("near")
+  })
+})
+

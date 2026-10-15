@@ -10,7 +10,7 @@ const vote = (judge: string, decision: boolean, eventIds: string[] = []) => ({
 const findings: Finding[] = [
   { id: "I1", title: "SQL injection", dimension: "issueDetection", kind: "detected", question: "Did they catch it?", votes: [vote("A", true, ["e1"]), vote("B", true), vote("C", true)], agreement: "3/3", confidence: "high", needsReview: false },
   { id: "I2", title: "Off-by-one", dimension: "issueDetection", kind: "missed", question: "Did they catch the offset?", votes: [vote("A", true), vote("B", false), vote("C", false)], agreement: "2/3", confidence: "low", needsReview: true },
-  { id: "A1", title: "Challenged parse_date_safe", dimension: "challengeAssumptions", kind: "detected", question: "?", votes: [vote("A", true)], agreement: "1/1", confidence: "medium", needsReview: false },
+  { id: "A1", title: "Challenged parse_date_safe", dimension: "challengeAssumptions", kind: "detected", question: "?", votes: [vote("A", true), vote("B", true)], agreement: "2/2", confidence: "medium", needsReview: false },
 ]
 
 describe("evidence-first report", () => {

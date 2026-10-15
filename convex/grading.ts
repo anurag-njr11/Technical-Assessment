@@ -320,10 +320,18 @@ export async function gradeSubmission(
   const extraComments: ExtraComment[] = []
   const reviewReasons: string[] = []
 
+  const yesVotes = (x: Consensus) => x.votes.filter((v) => v.valid && v.decision).length
+  const distance = (item: KeyItem, c: Comment) => (c.line < item.lineStart ? item.lineStart - c.line : c.line > item.lineEnd ? c.line - item.lineEnd : 0)
   const record = (item: KeyItem, consensus: Consensus, c: Comment) => {
     const prev = itemState.get(item.id)
-    // GR-18: the best pair wins (a positive consensus from any comment).
-    if (!prev || (!prev.consensus.decision && consensus.decision)) itemState.set(item.id, { consensus, comment: c })
+    // GR-18: the best pair wins: a positive consensus from any comment; without one,
+    // the comment with more valid "yes" votes, then the one closest to the item's lines.
+    const better = !prev || (!prev.consensus.decision && (
+      consensus.decision ||
+      yesVotes(consensus) > yesVotes(prev.consensus) ||
+      (yesVotes(consensus) === yesVotes(prev.consensus) && distance(item, c) < distance(item, prev.comment))
+    ))
+    if (better) itemState.set(item.id, { consensus, comment: c })
     return consensus.decision
   }
 

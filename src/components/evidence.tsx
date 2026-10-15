@@ -27,12 +27,16 @@ export type Finding = {
 export type TrajectoryResult = { dimensions: Array<{ key: string; label: string; score: number; detail: string }>; findings: Finding[] }
 export type BuildEvent = { id: string; t: number; type: string; data?: string; tokens?: { input: number; output: number } }
 
-const GROUPS: Array<{ kind: Finding['kind']; title: string }> = [
+const GROUPS: Array<{ kind: Finding['kind'] | 'undecided'; title: string }> = [
   { kind: 'detected', title: 'Detected issues' },
   { kind: 'missed', title: 'Missed issues' },
   { kind: 'false_positive', title: 'False positives' },
   { kind: 'behavior', title: 'Other behaviours' },
+  { kind: 'undecided', title: 'Couldn’t be judged (too few judge votes: review by hand)' },
 ]
+
+/** Fewer than two usable judge votes and no human answer: the finding has no decision. */
+const undecided = (f: Finding) => !f.overridden && f.votes.filter((v) => v.valid).length < 2
 
 const isSplit = (f: Finding) => {
   const valid = f.votes.filter((v) => v.valid)
@@ -98,7 +102,7 @@ export function EvidenceReport({ trajectory, overall, band, code, events, submis
       ) : null}
 
       {GROUPS.map((g) => {
-        const fs = trajectory.findings.filter((f) => f.kind === g.kind)
+        const fs = trajectory.findings.filter((f) => (g.kind === 'undecided' ? undecided(f) : f.kind === g.kind && !undecided(f)))
         if (!fs.length) return null
         return (
           <section key={g.kind} className="rounded-xl border border-border bg-card p-6">
@@ -231,8 +235,8 @@ export function AgentPR({ scenario, findings }: { scenario: Scenario | DecisionS
               <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">A{i + 1}</span>
               <span className="min-w-0 flex-1">{text}</span>
               {f ? (
-                <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold', f.kind === 'detected' ? 'border-success/30 bg-success-soft text-success' : 'border-border bg-muted text-muted-foreground')}>
-                  {f.kind === 'detected' ? 'Challenged' : 'Not challenged'}
+                <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold', undecided(f) ? 'border-warning/30 bg-warning-soft text-warning' : f.kind === 'detected' ? 'border-success/30 bg-success-soft text-success' : 'border-border bg-muted text-muted-foreground')}>
+                  {undecided(f) ? 'Undetermined' : f.kind === 'detected' ? 'Challenged' : 'Not challenged'}
                 </span>
               ) : null}
             </li>
