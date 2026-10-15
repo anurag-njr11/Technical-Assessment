@@ -7,7 +7,8 @@ import { SCENARIO_META } from "./answerKey"
 import { assistantReply, buildTask } from "./buildScenario"
 import type { BuildEvent } from "./buildScenario"
 import { aiAllowed, byToken, requireActive } from "./candidates"
-import { callModel, redact } from "./judges"
+import { assistantModel, callModel, redact } from "./judges"
+import { aiConfigured, modelLabel, parseModel } from "./providers"
 import { hit } from "./rateLimit"
 
 // M3 · Directed Build proxy (spec §7.3), and the PR-author chat on code
@@ -152,14 +153,16 @@ export const ask = action({
     const prompt = checkPrompt(args.prompt)
     const p = await ctx.runMutation(internal.builds.prepareAsk, { token: args.token, prompt })
     const build = p.kind === "build"
-    const llm = !!(process.env.LLM_API_KEY || process.env.LLM_BASE_URL)
+    const llm = aiConfigured()
     if (!build && !llm) throw new Error("The agent is unavailable right now. Please continue your review without it.")
     const scripted = build ? assistantReply(p.scenarioId, prompt) : { text: "", code: "", fault: undefined }
     let reply = { text: scripted.text, code: scripted.code }
     let tokens = { input: estimate(prompt), output: estimate(reply.text + reply.code) }
     let model = "scripted"
     if (!scripted.fault && llm) {
-      model = SCENARIO_META[p.scenarioId]?.agentModel ?? process.env.ASSISTANT_MODEL ?? "anthropic/claude-sonnet-5"
+      const pinned = SCENARIO_META[p.scenarioId]?.agentModel
+      const ref = pinned ? parseModel(pinned) : assistantModel()
+      model = modelLabel(ref)
       const code = build ? `<current_code>\n${p.code}\n</current_code>\n\n` : ""
       const user = `<task>\n${buildTask(p.scenarioId)}\n</task>\n\n<conversation>\n${p.history}\n</conversation>\n\n${code}<request>\n${p.prompt}\n</request>`
       const usage = { input: 0, output: 0 }
@@ -171,7 +174,7 @@ export const ask = action({
         await ctx.runMutation(internal.builds.setPartial, { token: args.token, text: soFar })
       }
       try {
-        const raw = await callModel({ model, family: "assistant" }, user, build ? ASSISTANT_SYSTEM : AUTHOR_SYSTEM, usage, onText)
+        const raw = await callModel(ref, user, build ? ASSISTANT_SYSTEM : AUTHOR_SYSTEM, usage, onText)
         const out = build ? splitReply(raw) : { text: raw.trim().slice(0, 3000), code: "" }
         if (out.text || out.code) {
           reply = out

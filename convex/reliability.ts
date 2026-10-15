@@ -7,7 +7,8 @@ import { requireOwner, requireRecruiter } from "./access"
 import { ANSWER_KEYS } from "./answerKey"
 import { gradeSubmission } from "./grading"
 import { writeMetricRow } from "./submissions"
-import { PROMPT_VERSION, RUBRIC_VERSION, callModel, getPanel, liveAsker } from "./judges"
+import { PROMPT_VERSION, RUBRIC_VERSION, assistantModel, callModel, getPanel, liveAsker } from "./judges"
+import { parseModel } from "./providers"
 import type { Trace } from "./judges"
 import { SCORING_VERSION, itemOrdinal, overallFrom } from "./scoring"
 import type { ComponentVec } from "./metrics"
@@ -145,9 +146,9 @@ export function summarize(label: string, r: Result) {
 
 /** FB-2 non-native variant: one model rewrite per comment; falls back to the original text on failure. */
 async function rewrite(text: string): Promise<string> {
-  const model = process.env.REWRITE_MODEL ?? process.env.ASSISTANT_MODEL ?? "anthropic/claude-sonnet-5"
+  const ref = process.env.REWRITE_MODEL ? parseModel(process.env.REWRITE_MODEL, "rewrite") : assistantModel()
   try {
-    const out = (await callModel({ model, family: "rewrite" }, `<comment_to_rewrite>\n${text}\n</comment_to_rewrite>`, REWRITE_SYSTEM)).trim()
+    const out = (await callModel(ref, `<comment_to_rewrite>\n${text}\n</comment_to_rewrite>`, REWRITE_SYSTEM)).trim()
     return out ? out.slice(0, 4000) : text
   } catch {
     return text

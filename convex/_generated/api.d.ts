@@ -27,6 +27,8 @@ import type * as insights from "../insights.js";
 import type * as items from "../items.js";
 import type * as judges from "../judges.js";
 import type * as metrics from "../metrics.js";
+import type * as models from "../models.js";
+import type * as providers from "../providers.js";
 import type * as rateLimit from "../rateLimit.js";
 import type * as reliability from "../reliability.js";
 import type * as retention from "../retention.js";
@@ -63,6 +65,8 @@ declare const fullApi: ApiFromModules<{
   items: typeof items;
   judges: typeof judges;
   metrics: typeof metrics;
+  models: typeof models;
+  providers: typeof providers;
   rateLimit: typeof rateLimit;
   reliability: typeof reliability;
   retention: typeof retention;

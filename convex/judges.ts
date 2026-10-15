@@ -7,7 +7,10 @@
 export const PROMPT_VERSION = "prompts-2026-09-30b"
 export const RUBRIC_VERSION = "rubric-m1-2026-09-30"
 
-export type ModelRef = { model: string; family: string }
+import { PROVIDERS, modelLabel, parseModel, post } from "./providers"
+import type { ModelRef } from "./providers"
+
+export type { ModelRef }
 export type Judge = { name: string; primary: ModelRef; fallback: ModelRef }
 
 export const DEFAULT_PANEL: Judge[] = [
@@ -28,6 +31,63 @@ export const DEFAULT_PANEL: Judge[] = [
   },
 ]
 
+/**
+ * $0 panel: Gemini and Groq free tiers as primaries, OpenRouter `:free` models as
+ * fallbacks, six families. Model ids drift; `npx convex run models:check` pings each one.
+ */
+export const FREE_PANEL: Judge[] = [
+  {
+    name: "Judge A",
+    primary: { provider: "gemini", model: "gemini-flash-latest", family: "google" },
+    fallback: { provider: "openrouter", model: "nvidia/nemotron-3-super-120b-a12b:free", family: "nvidia" },
+  },
+  {
+    name: "Judge B",
+    primary: { provider: "groq", model: "openai/gpt-oss-120b", family: "openai" },
+    fallback: { provider: "openrouter", model: "thinkingmachines/inkling:free", family: "thinkingmachines" },
+  },
+  {
+    name: "Judge C",
+    primary: { provider: "groq", model: "qwen/qwen3-32b", family: "alibaba" },
+    fallback: { provider: "openrouter", model: "cohere/north-mini-code:free", family: "cohere" },
+  },
+]
+
+/** Fully offline on a 6 GB laptop GPU via Ollama (small models: slower and less accurate). */
+export const LOCAL_PANEL: Judge[] = [
+  {
+    name: "Judge A",
+    primary: { provider: "ollama", model: "gemma3:4b", family: "google" },
+    fallback: { provider: "ollama", model: "phi4-mini", family: "microsoft" },
+  },
+  {
+    name: "Judge B",
+    primary: { provider: "ollama", model: "llama3.2:3b", family: "meta" },
+    fallback: { provider: "ollama", model: "granite3.3:2b", family: "ibm" },
+  },
+  {
+    name: "Judge C",
+    primary: { provider: "ollama", model: "qwen3:4b", family: "alibaba" },
+    fallback: { provider: "ollama", model: "mistral:7b", family: "mistral" },
+  },
+]
+
+const PRESETS: Record<string, Judge[]> = { free: FREE_PANEL, local: LOCAL_PANEL, openrouter: DEFAULT_PANEL }
+
+/** JUDGE_PRESET, or "free" when a Gemini/Groq key is set, else the paid OpenRouter panel. */
+export function preset(): "free" | "local" | "openrouter" {
+  const p = process.env.JUDGE_PRESET
+  if (p === "free" || p === "local" || p === "openrouter") return p
+  return process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY ? "free" : "openrouter"
+}
+
+/** The candidate's assistant / PR agent: ASSISTANT_MODEL ("provider:model" or a plain id), else the preset's default. */
+export function assistantModel(): ModelRef {
+  if (process.env.ASSISTANT_MODEL) return parseModel(process.env.ASSISTANT_MODEL)
+  const p = preset()
+  return p === "free" ? FREE_PANEL[0].primary : p === "local" ? LOCAL_PANEL[2].primary : { model: "anthropic/claude-sonnet-5", family: "anthropic" }
+}
+
 /** Throws unless the panel has 3 judges and all six models come from distinct families. */
 export function validatePanel(panel: Judge[]): Judge[] {
   if (panel.length !== 3) throw new Error("The judge panel must have exactly 3 judges.")
@@ -37,17 +97,20 @@ export function validatePanel(panel: Judge[]): Judge[] {
   }
   for (const j of panel) {
     if (!j.name || !j.primary.model || !j.fallback.model) throw new Error("Every judge needs a name and two models.")
+    for (const ref of [j.primary, j.fallback]) {
+      if (ref.provider && !PROVIDERS.includes(ref.provider)) throw new Error(`Unknown provider "${ref.provider}" (use ${PROVIDERS.join(", ")}).`)
+    }
   }
   return panel
 }
 
 /**
- * The live panel. Owners can swap models without a code change by setting the
- * Convex env var JUDGE_PANEL_JSON to a Judge[] array; it is validated the same way.
+ * The live panel: JUDGE_PANEL_JSON (a Judge[] array, validated the same way) if set,
+ * else the preset (see preset()). Owners swap models without a code change.
  */
 export function getPanel(envVar: "JUDGE_PANEL_JSON" | "SHADOW_PANEL_JSON" = "JUDGE_PANEL_JSON"): Judge[] {
   const raw = process.env[envVar]
-  if (!raw) return validatePanel(DEFAULT_PANEL)
+  if (!raw) return validatePanel(PRESETS[preset()])
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -95,8 +158,7 @@ const MAX_TOKENS = 800
 type Usage = { prompt_tokens?: number; completion_tokens?: number }
 
 /**
- * Any OpenAI-compatible chat endpoint: OpenRouter (default, serves every panel
- * model with one key), Ollama (`http://localhost:11434/v1`), Groq, Together...
+ * One chat completion from the model's provider (see providers.ts).
  * With `onText`, the reply is streamed and onText gets the text so far.
  */
 export async function callModel(
@@ -107,27 +169,20 @@ export async function callModel(
   usage?: { input: number; output: number },
   onText?: (soFar: string) => Promise<void> | void,
 ): Promise<string> {
-  const baseUrl = (process.env.LLM_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "")
-  const key = process.env.LLM_API_KEY
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
-    body: JSON.stringify({
-      model: ref.model,
-      temperature: 0,
-      // Without a cap, OpenRouter reserves the model's full output budget and returns 402 on low balances.
-      max_tokens: MAX_TOKENS,
-      ...(onText ? { stream: true, stream_options: { include_usage: true } } : {}),
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: prompt },
-      ],
-    }),
+  const response = await post(ref, {
+    temperature: 0,
+    // Without a cap, OpenRouter reserves the model's full output budget and returns 402 on low balances.
+    max_tokens: MAX_TOKENS,
+    ...(onText ? { stream: true, stream_options: { include_usage: true } } : {}),
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: prompt },
+    ],
   })
   if (response.status === 402) throw new Error(CREDITS_ERROR)
   if (!response.ok) throw new Error(`Model request failed (${response.status}).`)
   if (onText && response.body && response.headers.get("content-type")?.includes("text/event-stream")) {
-    const text = await readStream(response.body, onText, usage)
+    const text = stripThinking(await readStream(response.body, (soFar) => onText(stripThinking(soFar)), usage))
     if (usage && !usage.output) {
       usage.input = Math.ceil((system.length + prompt.length) / 4)
       usage.output = Math.ceil(text.length / 4)
@@ -142,8 +197,11 @@ export async function callModel(
     usage.input = res.usage?.prompt_tokens ?? Math.ceil((system.length + prompt.length) / 4)
     usage.output = res.usage?.completion_tokens ?? Math.ceil(String(res.choices?.[0]?.message?.content ?? "").length / 4)
   }
-  return String(res.choices?.[0]?.message?.content ?? "")
+  return stripThinking(String(res.choices?.[0]?.message?.content ?? ""))
 }
+
+/** Reasoning models (Qwen3, DeepSeek-R1 on Ollama) may prefix <think>…</think>; judges and candidates never see it. */
+export const stripThinking = (s: string) => s.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim()
 
 /** §21.2 result cache: judge replies keyed by sha256(prompt version, model, prompt). */
 export type JudgeCache = { get: (key: string) => Promise<string | null>; put: (key: string, text: string) => Promise<void> }
@@ -195,7 +253,7 @@ async function readStream(body: ReadableStream<Uint8Array>, onText: (soFar: stri
 export function liveAsker(traces: Trace[], cache?: JudgeCache): Asker {
   return async (judge, prompt, stage) => {
     for (const ref of [judge.primary, judge.fallback]) {
-      const key = cache ? await sha256(`${PROMPT_VERSION}\u0000${ref.model}\u0000${prompt}`) : ""
+      const key = cache ? await sha256(`${PROMPT_VERSION}\u0000${modelLabel(ref)}\u0000${prompt}`) : ""
       const hit = cache ? await cache.get(key) : null
       if (hit !== null) return { text: hit, model: ref.model, family: ref.family }
       const started = Date.now()

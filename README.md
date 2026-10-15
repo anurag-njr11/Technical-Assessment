@@ -115,11 +115,19 @@ No platform lock-in; both services are optional for local use.
   candidate/assessment links. Without a key, emails are printed to the Convex
   logs (`npx convex logs`).
 
+Check every configured model (6 judges + assistant) answers: `npx convex run models:check`.
+Free tiers are rate-limited: calls are capped per provider and HTTP 429s back off automatically.
+
 Convex environment variables (`npx convex env set NAME value`):
 | Variable | Default | Purpose |
 |---|---|---|
-| `LLM_API_KEY` | unset | API key for the judges and the assistant |
-| `ASSISTANT_MODEL` | `anthropic/claude-sonnet-5` | Model for the candidate's AI assistant and the PR agent |
+| `GEMINI_API_KEY` | unset | Google AI Studio key (free tier). With it (or `GROQ_API_KEY`) the **$0 free panel** is used |
+| `GROQ_API_KEY` | unset | Groq key (free tier) |
+| `OPENROUTER_API_KEY` | `LLM_API_KEY` | OpenRouter key; `:free` models need no credits |
+| `JUDGE_PRESET` | auto | `free` (Gemini + Groq + OpenRouter `:free`), `local` (Ollama on a laptop GPU), `openrouter` (paid panel). Auto = `free` when a Gemini/Groq key is set |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434/v1` | Ollama endpoint for the `local` preset (local deployments only) |
+| `LLM_API_KEY` | unset | Key for models without a provider prefix (the `openrouter` preset) |
+| `ASSISTANT_MODEL` | preset default | Assistant / PR agent, e.g. `groq:openai/gpt-oss-120b`, `gemini:gemini-flash-latest`, `ollama:qwen3:4b` |
 | `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | Any OpenAI-compatible base URL, e.g. `http://localhost:11434/v1` for Ollama (then set `JUDGE_PANEL_JSON` to local models) |
 | `RESEND_API_KEY` | unset | Send verification codes by email |
 | `EMAIL_FROM` | `ReviewBench <onboarding@resend.dev>` | Sender address (must be a domain verified in Resend) |
