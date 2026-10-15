@@ -56,7 +56,7 @@ export async function evaluate(cases: GoldenCase[], ask: Asker, panel: Judge[], 
   })
 
   // Adversarial suite (REL-10) on the reference scenario.
-  const adversarial = []
+  const adversarial: Array<{ label: string; expectation: string; passed: boolean; overall: number }> = []
   for (const a of ADVERSARIAL_CASES) {
     const r = await gradeSubmission(a.submission, ANSWER_KEYS["ord-482-junior"], ask, panel)
     adversarial.push({ label: a.label, expectation: a.expectation, passed: a.check(r), overall: r.overall })
