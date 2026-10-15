@@ -7,7 +7,7 @@ import { interviewQuestions } from '@/lib/interview'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, OutcomeChip, SeverityChip, cleanError } from '@/components/rb'
-import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
+import { RecruiterGate, RecruiterPage, useReadOnly } from '@/components/recruiter-gate'
 import { AgentPR, EvidenceReport, Timeline, type TrajectoryResult } from '@/components/evidence'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
@@ -83,6 +83,7 @@ function Report() {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const sub = useQuery(api.submissions.get, id ? { id } : 'skip')
+  const readOnly = useReadOnly()
   const regrade = useMutation(api.submissions.regrade)
 
   const pdf = (
@@ -291,8 +292,8 @@ function Report() {
         <aside className="space-y-5">
           {result ? <SharePanel submissionId={sub._id} released={!!sub.released} token={null} /> : null}
           {result ? <InsightsPanel submissionId={sub._id} /> : null}
-          {result && kind !== 'build' ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
-          {result && kind !== 'build' ? <EvalPanel submissionId={sub._id} result={result} /> : null}
+          {result && kind !== 'build' && !readOnly ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
+          {result && kind !== 'build' && !readOnly ? <EvalPanel submissionId={sub._id} result={result} /> : null}
           {sub.followUps.length ? <section className="rounded-xl border border-border bg-card p-5">
             <h2 className="text-[15px] font-semibold tracking-tight">{kind === 'decision' ? 'Critique' : 'Follow-up answers'}</h2>
             <div className="mt-3 space-y-4">
@@ -346,7 +347,7 @@ function Report() {
               <BandChip band={result?.band} score={result?.overall} />
             </div>
           </section>
-          <DeletePanel submissionId={sub._id} />
+          {readOnly ? null : <DeletePanel submissionId={sub._id} />}
         </aside>
       </div>
     </RecruiterPage>

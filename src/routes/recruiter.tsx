@@ -6,7 +6,7 @@ import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
 import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
-import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
+import { RecruiterGate, RecruiterPage, useReadOnly } from '@/components/recruiter-gate'
 import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
 import { AssessmentLink } from '@/components/assessment-link'
@@ -28,6 +28,7 @@ export const Route = createFileRoute('/recruiter')({
 type StatusFilter = 'all' | 'grading' | 'graded' | 'review' | 'error'
 
 function Recruiter() {
+  const readOnly = useReadOnly()
   const rows = useQuery(api.submissions.list)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
@@ -185,12 +186,16 @@ function Recruiter() {
         </div>
       </Panel>
 
-      <h2 className="mt-12 text-lg font-semibold tracking-tight">Invites &amp; hiring team</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Single-use candidate links, and who on your team can see results.</p>
-      <div className="mt-4 grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <InvitePanel />
-        <TeamPanel />
-      </div>
+      {readOnly ? null : (
+        <>
+          <h2 className="mt-12 text-lg font-semibold tracking-tight">Invites &amp; hiring team</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Single-use candidate links, and who on your team can see results.</p>
+          <div className="mt-4 grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
+            <InvitePanel />
+            <TeamPanel />
+          </div>
+        </>
+      )}
     </RecruiterPage>
   )
 }
@@ -205,6 +210,7 @@ const levelOf = (id: string) => (LEVELS.includes(SCENARIOS[id].level) ? SCENARIO
 const fieldCls = 'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/15'
 
 function AssessmentsPanel() {
+  const readOnly = useReadOnly()
   const assessments = useQuery(api.assessments.list)
   const create = useMutation(api.assessments.create)
   const [role, setRole] = useState(ROLES[0])
@@ -242,7 +248,7 @@ function AssessmentsPanel() {
 
   return (
     <>
-      <Panel className="mt-8" title="Create assessment" description="Pick a role and module. Everyone who opens the link gets their own attempt.">
+      {readOnly ? null : <Panel className="mt-8" title="Create assessment" description="Pick a role and module. Everyone who opens the link gets their own attempt.">
         <form onSubmit={send} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_2fr_140px_140px]">
           <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
             Role
@@ -290,7 +296,7 @@ function AssessmentsPanel() {
             </Link>
           </div>
         ) : null}
-      </Panel>
+      </Panel>}
 
       <Panel
         flush
