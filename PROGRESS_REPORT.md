@@ -2,9 +2,9 @@
 
 Sep 30, 2026 · @Ace · updated after the P7 AI-native flow build
 
-## Update · Oct 13, 2026 (branch `remove-macaly-dependency`)
+## Update · Oct 13, 2026
 
-- **Macaly fully removed.** The leftover `convex/macaly.ts` path is gone; AI calls go only to the OpenAI-compatible endpoint (`LLM_BASE_URL`, default OpenRouter), and email goes through Resend.
+- **Provider-independent.** AI calls go only to OpenAI-compatible endpoints (Gemini, Groq, OpenRouter, Ollama), and email goes through Resend.
 - **P7 backlog closed in code:** *AI-assisted* is enforced (off = no agent chat, refused server-side); Decision Review (ADR-031) has agent notes and the agent chat; replies stream as they arrive; each reply records its model (optional per-scenario pin); trajectory findings and Directed Build items can be overridden by humans (dimensions and overall re-scored); assessment links can be emailed; joined links expire after 7 days; a second join with the same email gets the link by email; assessment list filters; CSV export of the candidates table and the comparison.
 - **Platform:** budget guard (exhausted credits pause grading with a "Retry all" banner), judge-reply cache and automatic grading retries, data retention (`RETENTION_DAYS`), signed ATS webhook, Google Workspace SSO, shadow-mode grading of a candidate panel, CI regression gate against staging, 2PL IRT, non-native-English perturbation, Reliability page over 2,000 submissions.
 - **Found by clicking through locally:** model calls had no `max_tokens`, so OpenRouter returned 402 on low-balance keys (fixed: capped at 800); candidates saw raw "[CONVEX …] Server Error" text (fixed: one shared error cleaner); grading now retries when every judge call fails before falling back.
@@ -20,7 +20,7 @@ Sep 30, 2026 · @Ace · updated after the P7 AI-native flow build
 - **Grading:** the whole candidate–AI interaction is recorded (prompts, responses with token usage, accept/dismiss, manual edits, test runs). A **trajectory council** of the same three judges answers yes/no questions citing event IDs; citations and quotes are verified in code. Nine dimensions are reported with evidence, agreement ("3/3"), confidence and a human-review flag. Efficiency is outcomes per token: fewer tokens or more questions earn nothing by themselves.
 - **Verified:** 100/100 automated tests pass; the typecheck (app and `convex/`) is clean; the production build succeeds. **Not verified:** clicking through in a browser, and runs against real models.
 
-The website covers all six earlier roadmap phases, P1–P6, at demo or pilot depth. The code is on GitHub branch `ccr-327afa78-rdcapg`. It has **not been deployed or run against real models yet**. Heavy infrastructure (multi-tenancy, SSO, ATS webhooks, fine-tuning, LLM-generated scenarios) is deferred to `LATER.md`, alongside the checklist for running without Macaly.
+The website covers all six earlier roadmap phases, P1–P6, at demo or pilot depth. The code is on GitHub branch `ccr-327afa78-rdcapg`. It has **not been deployed or run against real models yet**. Heavy infrastructure (multi-tenancy, SSO, ATS webhooks, fine-tuning, LLM-generated scenarios) is deferred to `LATER.md`.
 
 - **P1–P2 (earlier today):**
   - Single-use invite links, rate limits, server autosave and an enforced timer.
@@ -211,8 +211,8 @@ Eighteen items remain. The first six must be done before inviting real candidate
 | # | Priority | Issue | Impact | Fix | Spec ID |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Blocker | Workspace not yet claimed | Whoever signs up first becomes owner | Set `WORKSPACE_OWNER_EMAIL`, deploy, sign up and claim | SEC-5 |
-| 2 | Blocker | This build is not deployed | None of P1 is live yet | Sync the branch to Macaly, deploy, smoke-test (see Next steps) | — |
-| 3 | Blocker | Fallback model IDs unconfirmed | If the endpoint doesn't serve them, a failover becomes "judge unavailable" and escalates rather than grading | Check the Macaly model catalogue; adjust with `JUDGE_PANEL_JSON` if needed | GR-7 |
+| 2 | Blocker | This build is not deployed | None of P1 is live yet | Deploy to Convex + Vercel, smoke-test (see Next steps) | — |
+| 3 | Blocker | Fallback model IDs unconfirmed | If the endpoint doesn't serve them, a failover becomes "judge unavailable" and escalates rather than grading | Run `npx convex run models:check` | GR-7 |
 | 4 | Blocker | Recruiter pages not browser-tested against a live backend | UI bugs in the review, golden-set or reliability screens would only show after deploy | Click through each flow on the preview once | — |
 | 5 | Blocker | Invite links are copied, not emailed | Recruiters must paste links or share the QR code | Acceptable for pilots; add email sending later | FR-R-6 |
 | 6 | Blocker | The P7 flow has not been clicked through | Assessment creation, the link landing page, the agent chat and the evidence report are only covered by component and backend tests | Run the demo script once end to end on a deployment with `LLM_API_KEY` | — |
@@ -263,10 +263,10 @@ Three of the six problem-statement objectives are now substantially met (up from
 
 **Owner actions (in order)**
 
-- [ ] Review and merge branch `ccr-327afa78-rdcapg` on GitHub, then sync it to the Macaly project
+- [ ] Review and merge the branch on GitHub, then deploy
 - [ ] `npx convex env set WORKSPACE_OWNER_EMAIL you@company.com`, then deploy (the schema accepts the existing demo data)
 - [ ] Sign up at /recruiter, verify your email, claim the workspace
-- [ ] Confirm the three fallback models are served by the Macaly endpoint (or set `JUDGE_PANEL_JSON`)
+- [ ] Confirm every panel model answers (`npx convex run models:check`) or set `JUDGE_PANEL_JSON`
 - [ ] `npx convex env set LLM_API_KEY …` (and optionally `ASSISTANT_MODEL`)
 - [ ] Smoke test: create an assessment → open the link on a phone via the QR → question the agent → refresh mid-way (draft and chat should survive) → submit → open the assessment page and the report → override one item → mark the review complete
 - [ ] On `/reliability`: run the adversarial suite; on one report, run "Re-grade 5×" and "Run perturbation tests"
@@ -291,7 +291,7 @@ Three of the six problem-statement objectives are now substantially met (up from
 
 ### 30 Sep 2026 · Checkpoint 1: P1 backend and P2 engine
 
-Scope agreed with the owner: all P1 blockers, the remaining known gaps, and the P2 reliability tooling. Delivery is the GitHub branch `ccr-327afa78-rdcapg`; syncing to Macaly and deploying is done by the owner.
+Scope agreed with the owner: all P1 blockers, the remaining known gaps, and the P2 reliability tooling. Delivery is the GitHub branch `ccr-327afa78-rdcapg`.
 
 - **Backend:** invite tokens, rate limits, autosave, enforced deadline, extra time, review queue, family-distinct fallbacks, `vague_match`, result schema, tracing, anonymization, golden set, evaluation runs, dashboard query.
 - **Tests:** 24 → 64.
@@ -305,7 +305,7 @@ Scope agreed with the owner: all P1 blockers, the remaining known gaps, and the 
 
 ### 30 Sep 2026 · Checkpoint 3: P3–P6 for the presentation
 
-- **Scope:** website functionality first; heavy infrastructure moved to `LATER.md`, together with the checklist for running without Macaly.
+- **Scope:** website functionality first; heavy infrastructure moved to `LATER.md`.
 - **Built:**
   - PAY-217 (M1 Mid), ADR-031 (M2) and DISC-12 (M3 pilot).
   - Batteries.

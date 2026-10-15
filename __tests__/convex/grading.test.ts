@@ -3,7 +3,7 @@ import { api } from "../../convex/_generated/api"
 import { DEFAULT_PANEL, redact, validatePanel } from "../../convex/judges"
 import { resultValidator } from "../../convex/schema"
 import type { C } from "./helpers"
-import { ALL_MODELS, installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges } from "./helpers"
+import { ALL_MODELS, installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges, urls } from "./helpers"
 import { PAUSED } from "../../convex/judges"
 
 beforeEach(installFakeJudges)
@@ -100,6 +100,38 @@ describe("grading pipeline", () => {
     expect(result.modelsUsed).toEqual(["anthropic/claude-sonnet-5", "google/gemini-3.6-flash", "meta-llama/llama-3.3-70b-instruct"])
     expect(result.callCount).toBeGreaterThan(0)
     expect(result.commentClasses).toHaveLength(3)
+  })
+})
+
+describe("SCR-1 follow-up checks", () => {
+  it("stores which checks each answer passed, with the judges' yes count", async () => {
+    const t = makeT()
+    const { invite } = await import("./helpers")
+    const { token } = await invite(t)
+    await t.mutation(api.candidates.start, { token })
+    await t.mutation(api.submissions.submit, {
+      token, verdict: "request_changes", comments: [],
+      answers: ["Check that payment.merchant_id matches g.merchant.id", "Write tests for retries", "Fix it please"],
+    })
+    const { vi } = await import("vitest")
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    const r = (await t.run(async (ctx) => (await ctx.db.query("submissions").first())!)).result!
+    const [a1, a2] = r.followUpQuality!.answers
+    expect(a1.checks).toEqual([
+      { label: "Answers the question", passed: true, yes: 3 },
+      { label: "Specific to this code", passed: true, yes: 3 },
+      { label: "Actionable", passed: true, yes: 3 },
+    ])
+    expect(a2.checks!.find((c) => c.label === "Specific to this code")).toMatchObject({ passed: false, yes: 0 })
+    expect(a2.score).toBe(2)
+  })
+})
+
+describe("LLM transport", () => {
+  it("calls the OpenAI-compatible endpoint", async () => {
+    const { result } = await submitAndGrade(makeT(), PRIYA)
+    expect(urls.every((u) => u === "https://llm.test/v1/chat/completions")).toBe(true)
+    expect(outcome(result, "I1")).toBe("found")
   })
 })
 

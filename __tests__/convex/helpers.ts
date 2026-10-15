@@ -62,6 +62,15 @@ function fakeJudge(model: string, prompt: string) {
       proposes_fix: hit && /should|use |fix/.test(lc),
       evidence: hit ? (mode === "fabricate" ? "a quote the candidate never wrote" : kw) : "",
     }
+  } else if (prompt.includes("<candidate_answer>")) {
+    // Follow-up checklist: answers the question, is specific only if it names code, and is always actionable.
+    const ans = between(prompt, "<candidate_answer", "</candidate_answer>")
+    answer = {
+      addresses_question: true,
+      specific: /\w+\.\w+|\(\)/.test(ans),
+      actionable: true,
+      evidence: ans.split(/\s+/).slice(0, 3).join(" "),
+    }
   } else if (prompt.includes("<transcript>")) {
     // Trajectory question: a fair judge credits good behaviour and denies bad, quoting the final review event.
     const last = between(prompt, "<transcript>", "</transcript>").split("\n").filter((l) => l.startsWith("[")).pop() ?? ""
@@ -91,14 +100,19 @@ function fakeJudge(model: string, prompt: string) {
 
 const chat = (content: string) => Response.json({ choices: [{ message: { content } }] })
 
+/** Every URL the fake fetch received, for tests that check routing. */
+export const urls: string[] = []
+
 export function installFakeJudges() {
   for (const k of Object.keys(modes)) delete modes[k]
   prompts.length = 0
+  urls.length = 0
   process.env.LLM_BASE_URL = "https://llm.test/v1"
   process.env.LLM_API_KEY = "test-key"
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init: { body: string }) => {
+    vi.fn(async (url: string, init: { body: string }) => {
+      urls.push(String(url))
       const body = JSON.parse(init.body) as { model: string; messages: Array<{ content: string }> }
       prompts.push(body.messages[1].content)
       return fakeJudge(body.model, body.messages[1].content)

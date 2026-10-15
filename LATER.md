@@ -5,9 +5,8 @@ the spec requirement it completes. Tick items off as they land.
 
 ## A. Platform independence (done)
 
-Macaly is no longer used: judges call any OpenAI-compatible endpoint
-(`LLM_BASE_URL`, default OpenRouter), emails go through Resend, and the Macaly
-bridge/tagger are removed (the last helper, `convex/macaly.ts`, was deleted 2026-10-13). Remaining:
+Judges and agents call any OpenAI-compatible endpoint (Gemini, Groq,
+OpenRouter or local Ollama) and emails go through Resend. Remaining:
 
 - [x] **Per-provider direct keys**: Gemini, Groq, OpenRouter and local Ollama per model (`convex/providers.ts`) (SEC-16).
 - [x] **Budget guard.** When the provider returns 402/quota errors, show a

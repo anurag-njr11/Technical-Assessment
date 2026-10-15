@@ -190,6 +190,8 @@ export const trajectoryValidator = v.object({
       // The answer that reflects well on the candidate, and any other dimensions it feeds.
       good: v.optional(v.boolean()),
       also: v.optional(v.array(v.string())),
+      // How to phrase the finding when the candidate gave the good answer (e.g. "Didn't blindly accept faulty output").
+      goodTitle: v.optional(v.string()),
       // Set by a human override (HR-2).
       humanDecision: v.optional(v.boolean()),
       overridden: v.optional(v.boolean()),
@@ -240,7 +242,15 @@ export const resultValidator = v.object({
     v.object({
       value: v.number(),
       detail: v.string(),
-      answers: v.array(v.object({ question: v.string(), score: v.number(), votes: v.number() })),
+      answers: v.array(
+        v.object({
+          question: v.string(),
+          score: v.number(),
+          votes: v.number(),
+          // Per-check council result, so recruiters can see why an answer lost points.
+          checks: v.optional(v.array(v.object({ label: v.string(), passed: v.boolean(), yes: v.number() }))),
+        }),
+      ),
     }),
   ),
   communication: v.optional(v.object({ value: v.number(), detail: v.string() })),

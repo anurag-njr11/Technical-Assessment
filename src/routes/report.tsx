@@ -117,7 +117,11 @@ function Report() {
         callCount?: number
         reviewReasons: string[]
         judges: Array<{ name: string; model: string }>
-        followUpQuality?: { value: number; detail: string; answers: Array<{ question: string; score: number; votes: number }> }
+        followUpQuality?: {
+          value: number
+          detail: string
+          answers: Array<{ question: string; score: number; votes: number; checks?: Array<{ label: string; passed: boolean; yes: number }> }>
+        }
         communication?: { value: number; detail: string }
         configNote?: string
         trajectory?: TrajectoryResult
@@ -187,7 +191,15 @@ function Report() {
             <>
               {scenario && scenario.kind !== 'build' && scenario.assumptions?.length ? <AgentPR scenario={scenario} findings={result.trajectory?.findings ?? []} /> : null}
               {result.trajectory ? (
-                <EvidenceReport trajectory={result.trajectory} overall={result.overall} band={result.band} code={sub.build?.code} events={sub.build?.events} submissionId={sub._id} />
+                <EvidenceReport
+                  trajectory={result.trajectory}
+                  overall={result.overall}
+                  band={result.band}
+                  baseScore={Math.round(100 * Object.entries(result.components).reduce((t, [k, c]) => t + (result.weights[k] ?? 0) * c.value, 0))}
+                  code={sub.build?.code}
+                  events={sub.build?.events}
+                  submissionId={sub._id}
+                />
               ) : null}
               {result.machine ? (
                 <section className="rounded-xl border border-border bg-card p-4 text-sm">
@@ -304,6 +316,7 @@ function Report() {
                 <div key={i}>
                   <p className="text-xs font-semibold text-muted-foreground">{f.question}</p>
                   <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{f.answer || '—'}</p>
+                  <FollowUpChecks a={result?.followUpQuality?.answers.find((a) => a.question === f.question)} />
                 </div>
               ))}
             </div>
@@ -846,3 +859,25 @@ function HiddenTests({ tests }: { tests: Array<{ name: string; pass: boolean; fa
     </section>
   )
 }
+/** SCR-1: how the judge council scored one follow-up answer, check by check. */
+function FollowUpChecks({ a }: { a?: { score: number; votes: number; checks?: Array<{ label: string; passed: boolean; yes: number }> } }) {
+  if (!a) return null
+  if (!a.checks) return <p className="mt-1.5 text-xs text-muted-foreground">Judges: {a.score}/3 checks passed</p>
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {a.checks.map((c) => (
+        <span
+          key={c.label}
+          title={`${c.yes} of ${a.votes} judges said yes`}
+          className={cn(
+            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold',
+            c.passed ? 'border-success/30 bg-success-soft text-success' : 'border-destructive/30 bg-destructive-soft text-destructive',
+          )}
+        >
+          {c.passed ? '✓' : '✗'} {c.label} <span className="font-normal opacity-80">{c.yes}/{a.votes}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+

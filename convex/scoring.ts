@@ -81,7 +81,7 @@ export function rescoreTrajectory(t: Trajectory, components: Result["components"
       const value = f.humanDecision === f.good ? 1 : 0
       const i = list.findIndex((s) => s.finding === f.id)
       if (i >= 0) list[i] = { ...list[i], value }
-      else list.push({ label: f.title, value, finding: f.id })
+      else list.push({ label: f.good ? f.title : (f.goodTitle ?? `Avoided: ${f.title}`), value, finding: f.id })
     }
   }
   return { dimensions: dimensionsFrom(sig, notes), findings }
