@@ -7,7 +7,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
 import { RecruiterGate, RecruiterPage } from '@/components/recruiter-gate'
 import { AssessmentLink } from '@/components/assessment-link'
-import { MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
+import { MODULE_LABEL, SCENARIOS, variantsOf } from '@/lib/scenario'
 import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
 
@@ -27,6 +27,7 @@ type Row = {
   _id: string
   name: string
   email: string | null
+  scenarioId: string
   status: string
   startedAt: number | null
   submissionId: string | null
@@ -111,6 +112,7 @@ function Assessment() {
           description={<>
             {a.role} · {sc ? `${MODULE_LABEL[sc.kind]} · ${sc.ticketId}` : a.scenarioId} · {a.level} · {a.minutes} min
             {a.aiAssisted ? ' · AI-assisted' : ''}
+            {a.rotate ? ` · rotating ${variantsOf(a.scenarioId).map((v) => SCENARIOS[v]?.ticketId ?? v).join(' / ')}` : ''}
           </>}
           actions={
             <button
@@ -169,7 +171,9 @@ function Assessment() {
                     </td>
                     <td className="px-3 py-3">
                       <CandidateName c={c} />
-                      <div className="text-xs text-muted-foreground">{STATUS[c.status] ?? c.status}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {STATUS[c.status] ?? c.status}{a.rotate ? ` · ${SCENARIOS[c.scenarioId]?.ticketId ?? c.scenarioId}` : ''}
+                      </div>
                     </td>
                     {METRICS.map((m) => (
                       <td key={m.key} className="px-3 py-3 font-mono">

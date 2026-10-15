@@ -8,6 +8,7 @@ import { hit } from "./rateLimit"
 import { newToken } from "./candidates"
 import { internal } from "./_generated/api"
 import { siteUrl } from "./email"
+import { variantsOf } from "../src/lib/scenario"
 
 // One reusable link / QR per role config. Each visitor who joins gets their
 // own `candidates` row and token, then continues the normal /assess flow.
@@ -47,6 +48,7 @@ export const create = mutation({
     level: v.string(),
     minutes: v.number(),
     aiAssisted: v.boolean(),
+    rotate: v.optional(v.boolean()),
     title: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -59,6 +61,7 @@ export const create = mutation({
       throw new Error("Time limit must be a whole number of minutes between 10 and 90.")
     }
     if (!args.aiAssisted && meta.kind === "build") throw new Error("Build with AI modules need AI-assisted mode on.")
+    if (args.rotate && variantsOf(args.scenarioId).length < 2) throw new Error("This module has no equivalent variants to rotate between yet.")
     const title = args.title?.trim().slice(0, 120) || `${args.role} · ${meta.title}`
     const token = newToken()
     const id = await ctx.db.insert("assessments", {
@@ -69,6 +72,7 @@ export const create = mutation({
       level: args.level,
       minutes: args.minutes,
       aiAssisted: args.aiAssisted,
+      rotate: args.rotate || undefined,
       token,
       status: "active",
       createdBy: me.userId,
@@ -116,6 +120,7 @@ export const get = query({
           _id: c._id,
           name: c.name,
           email: c.email ?? null,
+          scenarioId: c.scenarioId,
           status: c.status,
           createdAt: c.createdAt,
           startedAt: c.startedAt ?? null,
@@ -211,11 +216,14 @@ export const join = mutation({
       return { candidateToken: null, emailed: true }
     }
     const candidateToken = newToken()
+    const pool = a.rotate ? variantsOf(a.scenarioId) : [a.scenarioId]
+    const pick = new Uint32Array(1)
+    crypto.getRandomValues(pick)
     await ctx.db.insert("candidates", {
       workspaceId: a.workspaceId,
       name,
       email,
-      scenarioId: a.scenarioId,
+      scenarioId: pool[pick[0] % pool.length],
       token: candidateToken,
       extraMinutes: 0,
       status: "invited",

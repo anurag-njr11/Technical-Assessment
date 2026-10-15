@@ -336,6 +336,8 @@ export default defineSchema({
     level: v.string(), // Junior | Mid | Senior
     minutes: v.number(),
     aiAssisted: v.boolean(),
+    // SC-7: each joining candidate gets a random equivalent variant of scenarioId.
+    rotate: v.optional(v.boolean()),
     token: v.string(),
     status: v.union(v.literal("active"), v.literal("closed")),
     createdBy: v.id("users"),

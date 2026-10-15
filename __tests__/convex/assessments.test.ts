@@ -109,4 +109,14 @@ describe("reusable assessment links", () => {
     vi.setSystemTime(Date.now() + 8 * 24 * 60 * 60 * 1000)
     await expect(t.mutation(api.candidates.start, { token: candidateToken })).rejects.toThrow(/expired/)
   })
+
+  it("rotation gives each candidate one of the equivalent variants (SC-7)", async () => {
+    const t = makeT()
+    const owner = await seedOwner(t)
+    await expect(owner.mutation(api.assessments.create, { ...CONFIG, rotate: true })).rejects.toThrow(/no equivalent variants/)
+    const { id, token } = await owner.mutation(api.assessments.create, { ...CONFIG, scenarioId: "pay-217-mid", level: "Mid", rotate: true })
+    for (let i = 0; i < 24; i++) await t.mutation(api.assessments.join, { token, name: `C${i}` })
+    const seen = new Set((await owner.query(api.assessments.get, { id }))!.candidates.map((c) => c.scenarioId))
+    expect([...seen].sort()).toEqual(["pay-217-mid", "sub-118-mid"])
+  })
 })

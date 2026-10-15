@@ -5,7 +5,7 @@ import { AlertTriangle, Check, Copy, Download, Loader2, X } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
-import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
+import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS, variantsOf } from '@/lib/scenario'
 import { RecruiterGate, RecruiterPage, useReadOnly } from '@/components/recruiter-gate'
 import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
@@ -218,6 +218,8 @@ function AssessmentsPanel() {
   const [level, setLevel] = useState(levelOf(DEFAULT_SCENARIO.id))
   const [minutes, setMinutes] = useState(String(DEFAULT_SCENARIO.minutes))
   const [aiAssisted, setAiAssisted] = useState(true)
+  const [rotate, setRotate] = useState(false)
+  const variants = variantsOf(scenarioId)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [created, setCreated] = useState<{ id: string; token: string } | null>(null)
@@ -231,6 +233,14 @@ function AssessmentsPanel() {
     setMinutes(String(SCENARIOS[id].minutes))
     setLevel(levelOf(id))
     setAiAssisted(true)
+    setRotate(false)
+  }
+  // Level chooses content: switch to this module type's scenario written for that level, if there is one.
+  const pickLevel = (l: string) => {
+    setLevel(l)
+    const kind = SCENARIOS[scenarioId].kind
+    const match = SCENARIO_LIST.find((sc) => sc.kind === kind && sc.level === l)
+    if (match && match.id !== scenarioId) pickScenario(match.id)
   }
 
   const send = async (e: React.FormEvent) => {
@@ -238,7 +248,7 @@ function AssessmentsPanel() {
     setBusy(true)
     setError('')
     try {
-      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiRequired || aiAssisted }))
+      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiRequired || aiAssisted, rotate: rotate && variants.length > 1 }))
     } catch (err) {
       setError(cleanError(err))
     } finally {
@@ -260,13 +270,13 @@ function AssessmentsPanel() {
             Module
             <select value={scenarioId} onChange={(e) => pickScenario(e.target.value)} className={fieldCls}>
               {SCENARIO_LIST.map((sc) => (
-                <option key={sc.id} value={sc.id}>{MODULE_LABEL[sc.kind]} · {sc.ticketId} {sc.title}</option>
+                <option key={sc.id} value={sc.id}>{MODULE_LABEL[sc.kind]} · {sc.ticketId} {sc.title} ({sc.level})</option>
               ))}
             </select>
           </label>
           <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
             Level
-            <select value={level} onChange={(e) => setLevel(e.target.value)} className={fieldCls}>
+            <select value={level} onChange={(e) => pickLevel(e.target.value)} className={fieldCls}>
               {LEVELS.map((l) => <option key={l}>{l}</option>)}
             </select>
           </label>
@@ -283,6 +293,15 @@ function AssessmentsPanel() {
                 : 'On: the candidate can question the AI agent; judges score the whole interaction. Off: no agent chat.'}
             </span>
           </label>
+          {variants.length > 1 ? (
+            <label className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm sm:col-span-2 lg:col-span-4">
+              <input type="checkbox" className="accent-primary" checked={rotate} onChange={(e) => setRotate(e.target.checked)} />
+              <span className="font-medium">Rotate variants</span>
+              <span className="text-xs text-muted-foreground">
+                Each candidate gets one of {variants.map((id) => SCENARIOS[id].ticketId).join(' / ')} at random: same difficulty and issue mix, different code, so shared answers help less.
+              </span>
+            </label>
+          ) : null}
           <button type="submit" disabled={busy} className={cn(btn.primary, 'whitespace-nowrap')}>
             {busy ? 'Creating…' : 'Create assessment'}
           </button>
