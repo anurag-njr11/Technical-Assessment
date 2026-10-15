@@ -9,7 +9,7 @@ Macaly is no longer used: judges call any OpenAI-compatible endpoint
 (`LLM_BASE_URL`, default OpenRouter), emails go through Resend, and the Macaly
 bridge/tagger are removed (the last helper, `convex/macaly.ts`, was deleted 2026-10-13). Remaining:
 
-- [ ] **Per-provider direct keys** (Google, Anthropic, ...) if OpenRouter is not acceptable for data-handling reasons (SEC-16).
+- [x] **Per-provider direct keys**: Gemini, Groq, OpenRouter and local Ollama per model (`convex/providers.ts`) (SEC-16).
 - [x] **Budget guard.** When the provider returns 402/quota errors, show a
       "grading paused: AI credits exhausted" banner instead of escalating every
       submission.
@@ -22,24 +22,25 @@ bridge/tagger are removed (the last helper, `convex/macaly.ts`, was deleted 2026
 - [x] Run the regression gate automatically in CI against a staging deployment with real models (REL-7): needs the `CONVEX_DEPLOY_KEY_STAGING` secret
 
 ### P3 · Complete M1
-- [ ] Scenario variants (2–3 per issue) with rotation against leakage (SC-7)
+- [x] Scenario variants with rotation against leakage (SC-7): PAY-217 / SUB-118 rotate; more equivalent variants are content work
 - [x] Email invite links to candidates directly (FR-R-6)
 - [x] Role / level / date filters on the dashboard once there are many scenarios (FR-R-5)
 
 ### P4 · Modules
 - [x] M3: live LLM assistant behind the proxy, with planted faults still scripted (P7, AS-1–6)
 - [x] M3: council scoring of *how* faults were caught and of instruction quality (P7, trajectory council §10.8)
-- [ ] M3 Directed Build: real browser IDE with a sandboxed runtime (Judge0/Docker) and
+- [x] M3 Directed Build: hidden tests executed server-side in a QuickJS WebAssembly sandbox (`convex/sandbox.ts`); a full browser IDE is still open, and
       hidden tests executed server-side (today: signature checks + in-browser visible tests) (§7.3)
 - [x] M3: human overrides of Directed Build items
-- [ ] M2: more decision briefs; per-section judging instead of one combined critique
+- [x] M2: a second decision brief (ADR-044, senior)
+- [ ] M2: per-section judging instead of one combined critique
 
 ### P7 · AI-native flow
 - [x] Enforce the assessment's **AI-assisted** flag in the candidate flow: hide the agent chat / assistant when off (today it is a label only) (FR-R-20)
-- [ ] Decide whether the assessment **level** selects scenario content (Junior vs. Mid variants) or stays a label (§29.10)
+- [x] Assessment **level** selects scenario content when a scenario exists for that level (§29.10)
 - [ ] Calibrate the 50/50 deterministic/judged blend and the efficiency constant (4000 tokens per outcome) against human-graded trajectories (§11.4, §29.8–9)
 - [x] Human overrides of trajectory findings (dimensions and overall re-scored)
-- [ ] Batch trajectory questions per judge call to cut cost once accuracy is measured (NFR-COST-1)
+- [x] Batch trajectory questions per judge call (NFR-COST-1); `TRAJECTORY_BATCH=off` keeps single-question mode for comparison runs
 - [ ] Measure and tune the PR-author agent (`AUTHOR_SYSTEM`) on pilot transcripts: concedes too early? volunteers flaws? (needs transcripts)
 - [x] Pin a model per scenario version (`SCENARIO_META.agentModel`); every reply records its model (§7.4)
 - [x] Stream assistant replies instead of waiting for the full response
@@ -55,10 +56,10 @@ bridge/tagger are removed (the last helper, `convex/macaly.ts`, was deleted 2026
 - [ ] Job-analysis intake and company-specific scenarios from postmortems (CU-4)
 - [ ] Bring-your-own-code scenarios (CU-5)
 - [x] 2PL IRT from 30 submissions per scenario (SCR-3)
-- [ ] Test equating across variants (SCR-4): needs scenario variants
+- [ ] Test equating across variants (SCR-4): variants exist now; needs response data
 
 ### P6 · Scale & compliance
-- [ ] Multi-tenant workspaces (one workspace per company, scoped queries) (§21.2)
+- [x] Multi-tenant workspaces (one workspace per company, scoped queries) (§21.2)
 - [x] SSO: Google Workspace (SEC-4)
 - [ ] SAML (not supported by Convex Auth; needs an IdP broker such as WorkOS)
 - [x] ATS integration: signed `submission.graded` webhook + CSV export
@@ -74,7 +75,7 @@ bridge/tagger are removed (the last helper, `convex/macaly.ts`, was deleted 2026
 ## C. Tests trimmed or deferred for the demo build
 
 - [ ] Browser end-to-end tests (Playwright) of the recruiter pages against a live Convex dev deployment
-- [ ] Unit tests for the Directed Build worker-based visible test runner (browser only)
+- [x] Hidden-test sandbox unit tests, including hostile code (the browser worker for visible tests remains untested)
 - [ ] Browser end-to-end test of the P7 flow: create assessment → link → agent chat → submit → assessment page → compare → report
 - [ ] Live-model evaluation of the trajectory council (retest stability, perturbation, injection inside chat messages) (REL-3, REL-10, FB-2)
-- [ ] Real-model evaluation suite in CI (REL-10)
+- [x] Real-model evaluation: `npm run eval` (golden set + adversarial suite) and the CI regression gate; first published run pending free keys

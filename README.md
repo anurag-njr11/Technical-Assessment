@@ -1,164 +1,158 @@
 # ReviewBench
 
-ReviewBench doesn't ask whether you can write code without AI. It evaluates
-whether you can effectively work with AI to produce reliable engineering work.
+**ReviewBench doesn't ask whether you can write code without AI. It measures
+whether you can work *with* AI to produce reliable engineering work.**
 
-A recruiter creates an assessment and shares a link or QR code. The candidate
-reviews an AI-written PR together with the agent's rationale and assumptions,
-questions the agent in a chat, and submits a verdict (or builds a feature with
-a live AI assistant). ReviewBench records the whole interaction; a panel of
-three AI judges from different model families answers narrow yes/no questions
-about it, every vote must cite real events and quotes, and deterministic code
-computes the score. The recruiter gets an evidence-first report.
+Engineers now spend their day reviewing and steering AI output. ReviewBench
+assesses exactly that skill. A candidate reviews a pull request written by an
+AI agent, reads the agent's own notes (some of its assumptions are wrong on
+purpose) and can question the agent in a chat. Or they critique an AI
+architecture recommendation, or build a feature with an AI assistant that
+sometimes hallucinates. A council of three LLM judges from different model
+families grades the work and the whole human–AI interaction, **every
+judgment must quote the candidate's own words**, and deterministic code
+computes the score.
 
-## Quick start
+> **Live demo:** _link goes here after deploy_ · no sign-up: browse graded
+> candidates, then take an assessment yourself and watch your report appear.
 
-Needs Node 22+ (CI uses 22) and npm.
+<!-- screenshots: docs/screenshots/*.png -->
+
+## Why it's different
+
+- **It tests the job as it is now.** The flagship task is an AI-written PR plus
+  the agent's rationale and assumptions. Strong candidates verify claims
+  ("where is `gateway.refund()` defined?"), push back with evidence, and catch
+  what the AI got wrong; weak ones accept it.
+- **Judges answer narrow questions; code computes the score.** No model emits
+  a grade. Every "yes" must cite a verbatim quote or an event in the
+  recorded interaction, or it's discarded. Disagreements and low quorum go
+  to a human, who can override anything with an audit trail.
+- **Hidden tests actually run.** Directed Build code is executed in a QuickJS
+  WebAssembly sandbox (no network, no secrets, CPU and memory limits); a
+  hallucinated API fails at runtime.
+- **It measures itself.** A synthetic golden set, adversarial suite
+  (prompt injection, keyword stuffing, JSON bait), perturbation tests
+  (name swap, non-native English rewrite), test–retest, a regression gate in
+  CI, shadow grading of candidate panels, fairness monitoring and 2PL IRT
+  item statistics. See **[EVALUATION.md](EVALUATION.md)**.
+- **It costs $0 to run.** Free Gemini and Groq tiers or six small models on a
+  laptop GPU via Ollama, with per-provider rate limiting, 429 backoff,
+  caching and batched judging.
+
+## What's inside
+
+| For candidates | For hiring teams |
+|---|---|
+| One link or QR code, no account | Assessments by role, module, level and time limit |
+| AI PR review with an "Ask the agent" chat (streamed replies) | Candidate table across nine dimensions, side-by-side comparison, CSV export |
+| AI design-recommendation review with the agent | Evidence-first report: judge votes and quotes, disagreements, clickable interaction timeline |
+| Build with an AI assistant: editor, visible tests | Human review queue, audited overrides of any decision, candidate appeals |
+| Autosave, server-enforced timer, accommodations | Company workspaces, team invites, Google sign-in, ATS webhook |
+| Results page (when shared) and appeals | Item bank with difficulty, configurable emphasis with an adverse-impact check |
+
+**Scenarios:** ORD-482 (junior code review), PAY-217 and SUB-118 (mid,
+equivalent variants that rotate between candidates so leaked answers help
+less), INV-311 (senior: concurrency, transactions, cache coherence), ADR-031
+and ADR-044 (mid and senior decision reviews), DISC-12 and ORD-519 (directed builds).
+
+## How grading works
+
+```
+candidate work + recorded AI interaction
+  │
+  ├─ M1 answer key ──► location match ──► 3-judge council (6 model families) ──► verbatim-evidence check ──► consensus / escalate
+  ├─ trajectory ─────► one batched prompt per judge: assumptions challenged? faults noticed? verified? ──► cited-event check
+  └─ builds ─────────► hidden tests in a QuickJS sandbox
+                                                  │
+                         deterministic score (50% answer key/tests, 50% judged dimensions)
+                                                  │
+                         evidence-first report ──► human review & audited overrides
+```
+
+Details in **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+## Run it locally
+
+Needs Node 22+.
 
 ```bash
 npm install
-npx convex dev        # terminal 1. First run creates a deployment and writes .env.local
-                      # (no account needed: CONVEX_AGENT_MODE=anonymous npx convex dev)
-npx @convex-dev/auth  # once per deployment: sets JWT_PRIVATE_KEY, JWKS, SITE_URL
-npm run dev           # terminal 2, then open http://localhost:3000
+npx convex dev            # terminal 1: local backend (no account needed with CONVEX_AGENT_MODE=anonymous)
+npx @convex-dev/auth      # once: auth keys
+npm run dev               # terminal 2 → http://localhost:3000
 ```
 
-Then, in the browser:
+Then open **/demo** for the seeded demo workspace, or **/recruiter** to create
+your own workspace (the sign-up code is printed in `npx convex logs` when no
+email provider is set).
 
-1. Go to `/recruiter`, sign up with email + password. The 6-digit code is
-   emailed (with Resend) or printed in `npx convex logs`.
-2. Claim the workspace (the first verified account becomes owner).
-3. **Create assessment**: pick a role and module (default: PAY-217 AI PR review),
-   level, time limit, AI-assisted → you get a link and QR code.
-4. Open the link in a private window (or scan the QR on a phone), enter a name
-   and take the assessment as a candidate.
-5. Back as the recruiter, open the assessment → candidates table → **Compare**
-   → a candidate's report.
+### Free AI models
 
-### Check before running
+```bash
+npx convex env set GEMINI_API_KEY ...   # https://aistudio.google.com/apikey
+npx convex env set GROQ_API_KEY ...     # https://console.groq.com/keys
+npx convex run models:check             # pings all 6 judges + the assistant
+```
 
-| # | Check | How |
-|---|---|---|
-| 1 | Node 22+ | `node -v` |
-| 2 | Dependencies installed (includes `qrcode.react`) | `npm install` |
-| 3 | `.env.local` has `VITE_CONVEX_URL` and `CONVEX_DEPLOYMENT` | Written by `npx convex dev`; see `.env.example`. Never commit it |
-| 4 | Convex Auth keys set on the deployment | `npx convex env list` shows `JWT_PRIVATE_KEY`, `JWKS`, `SITE_URL` (`http://localhost:3000` locally) |
-| 5 | Owner lock set **before** anyone signs up (shared/deployed instances) | `npx convex env set WORKSPACE_OWNER_EMAIL you@company.com` |
-| 6 | AI key set, for the live assistant, the PR agent and the judges | `npx convex env set LLM_API_KEY ...` (OpenRouter by default) |
-| 7 | Every model ID is served by your endpoint: the 6 judge models and `ASSISTANT_MODEL` | Compare `convex/judges.ts` `DEFAULT_PANEL` with your provider's model list; override with `JUDGE_PANEL_JSON` / `ASSISTANT_MODEL` |
-| 8 | Emails (optional) | `RESEND_API_KEY` + `EMAIL_FROM` on a Resend-verified domain; otherwise read codes from `npx convex logs` |
-| 9 | Tests, typecheck and build pass | `npm test` (120+ tests), `npx tsc --noEmit -p .`, `npx tsc --noEmit -p convex`, `npm run build` |
-| 10 | `npx convex dev` shows no TypeScript errors | It typechecks `convex/` on every push; a failure means functions were not deployed |
+Fully offline instead: install [Ollama](https://ollama.com), pull the six
+models in `LOCAL_PANEL` (`convex/judges.ts`) and
+`npx convex env set JUDGE_PRESET local`. Without any model, everything still
+works: grading falls back to deterministic scoring and flags results for
+human review.
 
-**Without `LLM_API_KEY`** the site still works end to end: the assistant and PR
-agent use scripted replies, and grading falls back to deterministic scoring
-with every submission flagged "AI judges were unavailable" for human review.
-Use this for a UI walkthrough, not for a real demo of the judges.
+### Tests and evaluation
 
-**Known limitation:** the assessment's *level* is a label only (it does not
-pick scenario content). *AI-assisted* is enforced: off hides the agent chat
-and the server refuses agent requests; Build with AI modules require it.
+```bash
+npm test                  # ~140 tests: Convex functions, UI, sandbox, providers, harness
+npm run eval              # golden set + adversarial suite with real models → EVALUATION.md
+```
 
-**Cost and limits:** each PR review with chat triggers dozens of judge calls
-plus one assistant call per candidate prompt. Global caps:
-`SUBMISSIONS_PER_HOUR` (60), `STARTS_PER_HOUR` (300); per link: 200 joins/hour;
-per candidate: 120 assistant messages/hour.
+## Deploy for $0
 
-## Stack
-- TanStack Start (React) + Tailwind CSS: `src/`
-- Convex (database, server functions, auth): `convex/`
-- Vitest + convex-test: `__tests__/`
+1. Create a free [Convex](https://convex.dev) project: `npx convex login`,
+   then `npx convex deploy` once and `npx @convex-dev/auth --prod`.
+2. On Convex, set `SITE_URL` to your site URL and the model keys above.
+3. Import the GitHub repo in [Vercel](https://vercel.com) (free). `vercel.json`
+   builds with `npx convex deploy --cmd 'npm run build'`; add the
+   `CONVEX_DEPLOY_KEY` (production) environment variable from the Convex dashboard.
 
-## Key files
-| Path | What it does |
-|---|---|
-| `src/lib/scenario.ts` | Candidate-visible scenarios (ticket, diff, agent rationale + assumptions, build tasks) |
-| `convex/answerKey.ts` | Server-only answer keys, `ASSUMPTION_KEYS`, scenario metadata. Never import from `src/` |
-| `convex/assessments.ts` | Recruiter assessments, reusable link tokens, public join |
-| `convex/trajectory.ts` | Trajectory council: judges score the candidate–AI interaction on nine dimensions |
-| `convex/grading.ts` | Grading pipeline: location match, judge council, evidence check (pure core + action) |
-| `convex/judges.ts` | Judge panel (family-distinct fallbacks), transport, tracing, anonymization |
-| `convex/scoring.ts` | Deterministic score, bands, human-override recompute |
-| `convex/candidates.ts` | Invite links, start/autosave, enforced deadline + auto-submit |
-| `convex/submissions.ts` | Token-authorised submit (public) + recruiter queries (protected) |
-| `convex/reviews.ts` | Human review queue: audited overrides, resolve |
-| `convex/golden.ts` | Golden-set labels from human graders |
-| `convex/reliability.ts` | Evaluation runs (retest, perturbation, adversarial, golden) + dashboard |
-| `convex/metrics.ts`, `convex/dashboard.ts` | Kappa, Wilson/bootstrap CIs, regression gate, weight calibration |
-| `convex/access.ts` | Workspace owner claim, invites, `requireRecruiter` / `requireOwner` |
-| `convex/auth.ts` | Email + password sign-in with emailed verification codes |
-| `src/routes/a.$token.tsx` | Assessment link / QR landing page (`/a/<token>`) |
-| `src/routes/assess.tsx` | Candidate flow (`/assess?t=<token>`): PR + agent notes + "Ask the agent" chat |
-| `src/routes/recruiter.tsx` | Dashboard: create assessment, link + QR, assessments, submissions, team |
-| `src/routes/assessment.tsx` | All candidates of one assessment across dimensions + comparison view |
-| `src/routes/report.tsx` | Evidence-first report + override, golden-set and evaluation tools |
-| `src/components/evidence.tsx` | Dimensions, judge evidence, disagreements, interaction timeline, agent PR |
-| `src/routes/review.tsx` | Human review queue (escalations + candidate appeals) |
-| `src/routes/reliability.tsx` | Reliability, fairness, validity, experiment log, audit pack |
-| `src/routes/items.tsx` | Item bank: detection rates, IRT difficulty, item/emphasis config |
-| `src/routes/results.tsx` | Candidate-facing results + appeal (`/results?t=<token>`) |
-| `src/routes/methodology.tsx` | Public methodology / technical manual summary |
-| `src/components/build-workspace.tsx` | Task → editor → AI assistant → tests → submit; shared chat component |
-| `convex/builds.ts`, `convex/buildScenario.ts` | Assistant / PR-agent proxy (live LLM, scripted faults, fallback), deterministic build grading |
-| `convex/items.ts`, `convex/insights.ts` | Item config + adverse-impact check; norms, IRT, outcomes, validity |
-| `LATER.md` | Deferred enhancements |
-
-## External services
-No platform lock-in; both services are optional for local use.
-- **AI judges** (`convex/judges.ts`, `callModel`): any OpenAI-compatible chat
-  endpoint. Default is OpenRouter, which serves every model on the default
-  panel with one key. Without a key, grading still completes but every judge is
-  "unavailable" and submissions escalate to human review. If the provider
-  reports exhausted credits (402), grading pauses and the dashboard offers
-  "Retry all" instead of escalating everything.
-- **Emails** (`convex/email.ts`): Resend, for verification codes and for
-  candidate/assessment links. Without a key, emails are printed to the Convex
-  logs (`npx convex logs`).
-
-Check every configured model (6 judges + assistant) answers: `npx convex run models:check`.
-Free tiers are rate-limited: calls are capped per provider and HTTP 429s back off automatically.
+## Configuration
 
 Convex environment variables (`npx convex env set NAME value`):
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `GEMINI_API_KEY` | unset | Google AI Studio key (free tier). With it (or `GROQ_API_KEY`) the **$0 free panel** is used |
-| `GROQ_API_KEY` | unset | Groq key (free tier) |
-| `OPENROUTER_API_KEY` | `LLM_API_KEY` | OpenRouter key; `:free` models need no credits |
-| `JUDGE_PRESET` | auto | `free` (Gemini + Groq + OpenRouter `:free`), `local` (Ollama on a laptop GPU), `openrouter` (paid panel). Auto = `free` when a Gemini/Groq key is set |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434/v1` | Ollama endpoint for the `local` preset (local deployments only) |
-| `LLM_API_KEY` | unset | Key for models without a provider prefix (the `openrouter` preset) |
-| `ASSISTANT_MODEL` | preset default | Assistant / PR agent, e.g. `groq:openai/gpt-oss-120b`, `gemini:gemini-flash-latest`, `ollama:qwen3:4b` |
-| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | Any OpenAI-compatible base URL, e.g. `http://localhost:11434/v1` for Ollama (then set `JUDGE_PANEL_JSON` to local models) |
-| `RESEND_API_KEY` | unset | Send verification codes by email |
-| `EMAIL_FROM` | `ReviewBench <onboarding@resend.dev>` | Sender address (must be a domain verified in Resend) |
+| `GEMINI_API_KEY`, `GROQ_API_KEY` | unset | Free-tier keys; with either set the **$0 free panel** is used |
+| `OPENROUTER_API_KEY` | `LLM_API_KEY` | OpenRouter key (`:free` models are capped at 50 requests a day without credits) |
+| `JUDGE_PRESET` | auto | `free`, `local` (Ollama), `openrouter` (paid frontier models) |
+| `JUDGE_PANEL_JSON` | preset | Custom panel: 3 judges × (primary, fallback), six distinct families |
+| `ASSISTANT_MODEL` | preset default | Agent / assistant, e.g. `groq:openai/gpt-oss-120b`, `ollama:qwen3:4b` |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434/v1` | Local models (local deployments only) |
+| `LLM_API_KEY`, `LLM_BASE_URL` | unset, OpenRouter | Models without a provider prefix |
+| `TRAJECTORY_BATCH` | on | `off` asks trajectory questions one per call (for evaluation comparisons) |
+| `SHADOW_PANEL_JSON` | unset | Candidate panel that also grades live submissions without changing them |
+| `REWRITE_MODEL` | assistant | Model for the non-native-English perturbation test |
+| `RESEND_API_KEY`, `EMAIL_FROM` | unset | Email codes and links (otherwise printed to the Convex logs) |
+| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_GOOGLE_HD` | unset | Google sign-in, optionally limited to one Workspace domain |
+| `WORKSPACE_OWNER_EMAIL` | unset | Single-company mode: only this email can create a workspace |
+| `SUBMISSIONS_PER_HOUR`, `STARTS_PER_HOUR` | 60, 300 | Per-workspace / global caps that bound model spend |
+| `RETENTION_DAYS` | unset (keep) | Nightly deletion of old submissions and unused invites |
+| `WEBHOOK_URL`, `WEBHOOK_SECRET` | unset | Signed `submission.graded` events for an ATS |
 
-Optional Convex environment variables:
-| Variable | Default | Purpose |
-|---|---|---|
-| `WORKSPACE_OWNER_EMAIL` | unset | Only this verified email may claim the unclaimed workspace |
-| `SUBMISSIONS_PER_HOUR` | 60 | Global cap on graded submissions (bounds judge spend) |
-| `STARTS_PER_HOUR` | 300 | Global cap on assessment starts |
-| `JUDGE_PANEL_JSON` | built-in panel | Replace judge models; all 6 families must be distinct |
-| `RAG_EXAMPLES` | off | `on` adds up to 2 similar human-graded examples to each issue prompt |
-| `REWRITE_MODEL` | `ASSISTANT_MODEL` | Model that rewrites comments for the non-native-English perturbation test |
-| `SHADOW_PANEL_JSON` | unset | Candidate judge panel: also grades every live submission (EX-3) without changing it; compared on /reliability |
-| `RETENTION_DAYS` | unset (keep) | Daily job deletes submissions and unsubmitted invites older than this (SEC-17) |
-| `WEBHOOK_URL` | unset | POST `submission.graded` JSON for ATS integrations |
-| `WEBHOOK_SECRET` | unset | Signs webhook bodies: `X-ReviewBench-Signature: sha256=<HMAC>` |
-| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | unset | Adds "Continue with Google" for recruiters (SEC-4); callback `<CONVEX_SITE_URL>/api/auth/callback/google` |
-| `AUTH_GOOGLE_HD` | unset | Restrict Google sign-in to one Workspace domain |
+One-off after upgrading an older deployment: `npx convex run access:migrateLegacy`
+(moves pre-workspace data into a workspace) and
+`npx convex run reliability:backfillMetricRows`.
 
-CI: pushes to `main` also run the golden-set regression gate against a
-staging deployment when the `CONVEX_DEPLOY_KEY_STAGING` secret is set
-(`scripts/ci-gate.mjs`). After upgrading an existing deployment, run
-`npx convex run reliability:backfillMetricRows` once so older results appear
-on the Reliability page.
+## Stack
 
-## Status
-AI-native flow (P7): assessments with link/QR, AI PR review with a live agent,
-live Directed Build assistant, trajectory council, evidence-first recruiter
-views and candidate comparison. Plus P1–P6 at demo depth. Runs without
-Macaly. Clicked through locally (create assessment → join → Decision Review
-with agent chat → auto-submit → report); a full run against real models is
-still pending (the local key was near its spending limit). See
-`ReviewBench — Progress Report.md` and `LATER.md` for what remains.
+TanStack Start (React 19) + Tailwind CSS · Convex (database, functions,
+crons, auth) · QuickJS/WebAssembly sandbox · Vitest + convex-test ·
+TypeScript in strict mode · GitHub Actions.
+
+## Status and roadmap
+
+Everything above is implemented and tested. What's left needs real-world
+input rather than code: human-graded golden sets to calibrate the score
+blend, pilot transcripts to tune the PR agent, and counsel review of the
+candidate notice. See [LATER.md](LATER.md).
