@@ -38,7 +38,9 @@ const PIPELINE: Array<[string, string]> = [
   ['Evidence verification.', 'Every "yes" must quote the candidate\'s own words; code checks the quote really appears, and discards the vote if not.'],
   ['Anonymization.', 'Judges never see names or email addresses, even if typed into a comment.'],
   ['Consensus and escalation.', 'A majority of valid votes decides. Split votes or too few valid votes on serious items go to a person.'],
-  ['Deterministic scoring', 'with the published weights below. Human reviewers can override an item with a written justification; every override is logged.'],
+  ['How the candidate worked with AI.', 'The recorded chat and actions are judged the same way: did they challenge the agent\'s wrong assumptions, verify before accepting, give specific prompts? Every answer must cite real events and quote them.'],
+  ['Code that actually runs.', 'In Build with AI tasks, hidden tests run the submitted code in an isolated sandbox. A planted fault counts as fixed only if its test passes.'],
+  ['Deterministic scoring', 'with the published weights below. Human reviewers can override any decision with a written justification; every override is logged.'],
 ]
 
 // TR-2 published weights, TR-6 technical manual (summary), CO-1..CO-5 notices.
@@ -114,15 +116,17 @@ function Methodology() {
         <p className="mt-3 text-sm text-muted-foreground">
           Bands: Strong ≥ 80 · Meets bar 60–79 · Borderline 50–59 · Below bar &lt; 50. Weights and bands are provisional
           until calibrated against human graders; follow-up answers and communication are reported but not yet weighted.
-          The Directed Build pilot uses the same five slots for faults fixed, calibrated trust, testing, instruction quality
-          and task completion.
+          Build with AI tasks use the same five slots for faults fixed (by hidden tests), calibrated trust, testing,
+          instruction quality and task completion. The final score is half this and half the judged dimensions of how the
+          candidate worked with the AI.
         </p>
 
         <H id="checks">How we check the checker</H>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-muted-foreground">
           <li>Agreement with expert human graders (quadratic weighted kappa, target ≥ 0.70), with confidence intervals.</li>
           <li>Test–retest stability (same work graded 5 times, target ≤ 2 points spread).</li>
-          <li>Perturbation tests: renamed candidates, reformatting, reordering, verbosity and prompt-injection strings must not move scores by more than 3 points.</li>
+          <li>Perturbation tests: renamed candidates, reformatting, reordering, verbosity, prompt-injection strings and a non-native-English rewrite must not move scores by more than 3 points.</li>
+          <li>A labelled golden set and an adversarial suite, re-run on every change to prompts or models; results are published in the project's EVALUATION.md.</li>
           <li>Adverse-impact monitoring with the four-fifths rule, where group data is collected lawfully and with consent.</li>
           <li>A regression gate: any change to prompts, rubric, models or weights is re-run on the golden set before release.</li>
         </ul>

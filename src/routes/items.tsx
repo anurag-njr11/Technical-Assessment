@@ -138,7 +138,7 @@ function Items() {
                 </div>
               </Panel>
             ))}
-            <p className="mt-4 text-xs text-muted-foreground">Directed Build faults are graded by hidden code checks and aren't configurable in this pilot.</p>
+            <p className="mt-4 text-xs text-muted-foreground">Directed Build faults are graded by hidden tests that run the submitted code, and aren't configurable.</p>
           </>
         )}
     </RecruiterPage>

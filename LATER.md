@@ -29,8 +29,8 @@ bridge/tagger are removed (the last helper, `convex/macaly.ts`, was deleted 2026
 ### P4 · Modules
 - [x] M3: live LLM assistant behind the proxy, with planted faults still scripted (P7, AS-1–6)
 - [x] M3: council scoring of *how* faults were caught and of instruction quality (P7, trajectory council §10.8)
-- [x] M3 Directed Build: hidden tests executed server-side in a QuickJS WebAssembly sandbox (`convex/sandbox.ts`); a full browser IDE is still open, and
-      hidden tests executed server-side (today: signature checks + in-browser visible tests) (§7.3)
+- [x] M3 Directed Build: hidden tests executed server-side in a QuickJS WebAssembly sandbox (`convex/sandbox.ts`) (§7.3)
+- [ ] M3: a full browser IDE (multiple files, a terminal) instead of the single-file editor
 - [x] M3: human overrides of Directed Build items
 - [x] M2: a second decision brief (ADR-044, senior)
 - [ ] M2: per-section judging instead of one combined critique
