@@ -4,7 +4,7 @@
 // on the panel, so a failover can never collapse diversity. validatePanel()
 // enforces this at load time and in tests.
 
-export const PROMPT_VERSION = "prompts-2026-09-30b"
+export const PROMPT_VERSION = "prompts-2026-10-15"
 export const RUBRIC_VERSION = "rubric-m1-2026-09-30"
 
 import { PROVIDERS, modelLabel, parseModel, post } from "./providers"
@@ -150,7 +150,7 @@ export const PAUSED = "Grading paused: AI credits exhausted. Top up the provider
 export const creditsExhausted = (traces: Trace[]) =>
   traces.length > 0 && traces.every((t) => !t.ok) && traces.some((t) => t.error === CREDITS_ERROR)
 
-export type Asker = (judge: Judge, prompt: string, stage: string) => Promise<JudgeAnswer>
+export type Asker = (judge: Judge, prompt: string, stage: string, opts?: { maxTokens?: number }) => Promise<JudgeAnswer>
 
 /** Judges answer in short JSON; the agent replies in a few sentences plus one code block. */
 const MAX_TOKENS = 800
@@ -168,11 +168,12 @@ export async function callModel(
   /** Filled with the provider's reported token usage, when given. */
   usage?: { input: number; output: number },
   onText?: (soFar: string) => Promise<void> | void,
+  maxTokens = MAX_TOKENS,
 ): Promise<string> {
   const response = await post(ref, {
     temperature: 0,
     // Without a cap, OpenRouter reserves the model's full output budget and returns 402 on low balances.
-    max_tokens: MAX_TOKENS,
+    max_tokens: maxTokens,
     ...(onText ? { stream: true, stream_options: { include_usage: true } } : {}),
     messages: [
       { role: "system", content: system },
@@ -265,14 +266,14 @@ async function readStream(body: ReadableStream<Uint8Array>, onText: (soFar: stri
  * from it (no call, no trace). Evaluation runs pass no cache: they measure live variance.
  */
 export function liveAsker(traces: Trace[], cache?: JudgeCache): Asker {
-  return async (judge, prompt, stage) => {
+  return async (judge, prompt, stage, opts) => {
     for (const ref of [judge.primary, judge.fallback]) {
       const key = cache ? await sha256(`${PROMPT_VERSION}\u0000${modelLabel(ref)}\u0000${prompt}`) : ""
       const hit = cache ? await cache.get(key) : null
       if (hit !== null) return { text: hit, model: ref.model, family: ref.family }
       const started = Date.now()
       try {
-        const text = await callModel(ref, prompt)
+        const text = await callModel(ref, prompt, SYSTEM, undefined, undefined, opts?.maxTokens)
         if (cache) await cache.put(key, text)
         traces.push({
           stage, judge: judge.name, model: ref.model, family: ref.family, ok: true,

@@ -66,8 +66,15 @@ function fakeJudge(model: string, prompt: string) {
     // Trajectory question: a fair judge credits good behaviour and denies bad, quoting the final review event.
     const last = between(prompt, "<transcript>", "</transcript>").split("\n").filter((l) => l.startsWith("[")).pop() ?? ""
     const [, id = "", text = ""] = last.match(/^\[([^\]]+)\] (.*)$/) ?? []
-    const bad = /without checking|non-issue|This assumption is correct/.test(prompt.split("Question:")[1] ?? "")
-    answer = bad ? { decision: false, evidence: "", event_ids: [] } : { decision: true, evidence: text.split(/\s+/).slice(0, 4).join(" "), event_ids: [id] }
+    const judge1 = (question: string) =>
+      /without checking|non-issue|This assumption is correct/.test(question)
+        ? { decision: false, evidence: "", event_ids: [] }
+        : { decision: true, evidence: text.split(/\s+/).slice(0, 4).join(" "), event_ids: [id] }
+    if (prompt.includes("Questions:\n- [")) {
+      // Batched trajectory council: one answer per "- [ID] question" line.
+      const qs = [...prompt.split("Questions:\n")[1].matchAll(/^- \[([^\]]+)\] (.*)$/gm)]
+      answer = { answers: qs.map(([, qid, q]) => ({ id: qid, ...judge1(q) })) }
+    } else answer = judge1(prompt.split("Question:")[1] ?? "")
   } else if (prompt.includes("INTENTIONAL")) {
     const hit = lc.includes("cap")
     answer = { objects_to_behavior: hit, evidence: hit ? "cap" : "" }

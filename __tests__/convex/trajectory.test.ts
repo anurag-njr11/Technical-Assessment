@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { gradeTrajectory } from "../../convex/trajectory"
 import { gradeBuild } from "../../convex/buildScenario"
 import { gradeSubmission } from "../../convex/grading"
@@ -6,6 +6,11 @@ import { applyOverrides, blendOverall } from "../../convex/scoring"
 import { ANSWER_KEYS } from "../../convex/answerKey"
 import { DEFAULT_PANEL } from "../../convex/judges"
 import type { Asker } from "../../convex/judges"
+
+// These tests script answers per question (stage "trajectory:<id>"); the batched
+// council has its own test at the end.
+beforeAll(() => { process.env.TRAJECTORY_BATCH = "off" })
+afterAll(() => { delete process.env.TRAJECTORY_BATCH })
 
 // Candidate asks for the full function (F3 planted in e1), questions the
 // case-sensitivity, fixes it by hand and runs tests.
@@ -176,4 +181,23 @@ describe("M3 trajectory council", () => {
     expect([det(r), det(o)]).toEqual([0, 50])
     expect(o.overall).toBeGreaterThan(r.overall)
   })
+
+  it("batched council: one call per judge, same decisions and evidence checks", async () => {
+    const prompts: string[] = []
+    const batchAsk: Asker = async (judge, p, stage) => {
+      prompts.push(stage)
+      const qs = [...p.split("Questions:\n")[1].matchAll(/^- \[([^\]]+)\] /gm)].map((m) => m[1])
+      const answers = qs.map((id) => (id === "F3" ? { id, ...YES } : { id, ...NO }))
+      // Judge C quotes something that isn't in the transcript for F3: discarded, as in single-question mode.
+      if (judge.name === "Judge C") answers[0] = { id: "F3", ...YES, evidence: "a quote nobody wrote" }
+      return { text: JSON.stringify({ answers }), model: judge.primary.model, family: judge.primary.family }
+    }
+    const r = await gradeTrajectory(input, batchAsk, DEFAULT_PANEL, { batch: true })
+    expect(prompts).toEqual(["trajectory:batch", "trajectory:batch", "trajectory:batch"])
+    expect(r.callCount).toBe(3)
+    const f3 = f(r, "F3")
+    expect(f3).toMatchObject({ kind: "detected", agreement: "2/2" })
+    expect(f3.votes.find((v) => v.judge === "Judge C")).toMatchObject({ valid: false, discardedReason: "quoted evidence not found in the cited events" })
+  })
 })
+
