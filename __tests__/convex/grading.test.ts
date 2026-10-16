@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { api } from "../../convex/_generated/api"
 import { DEFAULT_PANEL, redact, validatePanel } from "../../convex/judges"
 import { resultValidator } from "../../convex/schema"
 import type { C } from "./helpers"
-import { installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges } from "./helpers"
+import { ALL_MODELS, installFakeJudges, makeT, modes, prompts, submitAndGrade, uninstallFakeJudges, urls } from "./helpers"
+import { PAUSED } from "../../convex/judges"
 
 beforeEach(installFakeJudges)
 afterEach(uninstallFakeJudges)
@@ -38,6 +39,7 @@ describe("grading pipeline", () => {
     expect(r.components.verdict.value).toBe(1)
     expect(r.overall).toBeGreaterThan(0)
     expect(r.overall).toBeLessThanOrEqual(100)
+    expect(r.reviewReasons).toEqual([])
     expect(r.needsReview).toBe(false)
   })
 
@@ -67,7 +69,7 @@ describe("grading pipeline", () => {
 
   it("does not give credit when only one judge is usable, and escalates", async () => {
     modes["google/gemini-3.6-flash"] = "down"
-    modes["qwen/qwen3-235b-a22b-instruct"] = "down"
+    modes["qwen/qwen3-235b-a22b-2507"] = "down"
     modes["meta-llama/llama-3.3-70b-instruct"] = "garbage"
     const { result } = await submitAndGrade(makeT(), PRIYA)
     expect(outcome(result, "I1")).toBe("missed")
@@ -98,6 +100,38 @@ describe("grading pipeline", () => {
     expect(result.modelsUsed).toEqual(["anthropic/claude-sonnet-5", "google/gemini-3.6-flash", "meta-llama/llama-3.3-70b-instruct"])
     expect(result.callCount).toBeGreaterThan(0)
     expect(result.commentClasses).toHaveLength(3)
+  })
+})
+
+describe("SCR-1 follow-up checks", () => {
+  it("stores which checks each answer passed, with the judges' yes count", async () => {
+    const t = makeT()
+    const { invite } = await import("./helpers")
+    const { token } = await invite(t)
+    await t.mutation(api.candidates.start, { token })
+    await t.mutation(api.submissions.submit, {
+      token, verdict: "request_changes", comments: [],
+      answers: ["Check that payment.merchant_id matches g.merchant.id", "Write tests for retries", "Fix it please"],
+    })
+    const { vi } = await import("vitest")
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    const r = (await t.run(async (ctx) => (await ctx.db.query("submissions").first())!)).result!
+    const [a1, a2] = r.followUpQuality!.answers
+    expect(a1.checks).toEqual([
+      { label: "Answers the question", passed: true, yes: 3 },
+      { label: "Specific to this code", passed: true, yes: 3 },
+      { label: "Actionable", passed: true, yes: 3 },
+    ])
+    expect(a2.checks!.find((c) => c.label === "Specific to this code")).toMatchObject({ passed: false, yes: 0 })
+    expect(a2.score).toBe(2)
+  })
+})
+
+describe("LLM transport", () => {
+  it("calls the OpenAI-compatible endpoint", async () => {
+    const { result } = await submitAndGrade(makeT(), PRIYA)
+    expect(urls.every((u) => u === "https://llm.test/v1/chat/completions")).toBe(true)
+    expect(outcome(result, "I1")).toBe("found")
   })
 })
 
@@ -184,3 +218,33 @@ describe("FB-1 anonymization", () => {
     expect(outcome(result, "I1")).toBe("found")
   })
 })
+
+describe("budget guard", () => {
+  it("pauses grading instead of escalating when credits run out, and Retry all resumes", async () => {
+    const t = makeT()
+    for (const m of ALL_MODELS) modes[m] = "broke"
+    const { sub, owner } = await submitAndGrade(t, PERFECT)
+    expect(sub).toMatchObject({ status: "error", error: PAUSED })
+    expect((await owner.query(api.submissions.list, {}))[0].paused).toBe(true)
+
+    for (const m of ALL_MODELS) delete modes[m]
+    expect(await owner.mutation(api.submissions.retryPaused, {})).toBe(1)
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    const after = await t.run(async (ctx) => (await ctx.db.get(sub._id))!)
+    expect(after.status).toBe("graded")
+    expect(after.result!.reviewReasons.join(" ")).not.toMatch(/unavailable/)
+  })
+})
+
+describe("item-to-comment linking", () => {
+  it("without a positive verdict, links the nearest comment rather than the first one seen", async () => {
+    const t = makeT()
+    for (const m of ALL_MODELS) modes[m] = "down"
+    const { result } = await submitAndGrade(t, [
+      { id: "far", file: "orders/views.py", line: 14, severity: "low", text: "per_page parsing could use a helper." },
+      { id: "near", file: "orders/views.py", line: 16, severity: "high", text: "This offset looks wrong for page 1." },
+    ])
+    expect(result.items.find((i) => i.id === "I2")!.commentId).toBe("near")
+  })
+})
+

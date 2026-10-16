@@ -19,7 +19,25 @@ export const TARGETS = {
   latencyP95Sec: 180, // SM-8
 }
 
-type Sub = { _id: string; scenarioId: string; submittedAt: number; machine: Result }
+export type Slim = Doc<"metricRows">["machine"]
+type Sub = { _id: string; scenarioId: string; submittedAt: number; machine: Slim }
+
+/** REL-8: the part of a machine result the dashboard reads (no comment text, evidence or trajectory). */
+export function slim(r: Result): Slim {
+  return {
+    overall: r.overall,
+    components: Object.fromEntries(Object.entries(r.components).map(([k, c]) => [k, { value: c.value }])),
+    weights: { ...r.weights },
+    needsReview: r.needsReview,
+    gradedAt: r.gradedAt,
+    ...(r.callCount !== undefined ? { callCount: r.callCount } : {}),
+    items: r.items.map((i) => ({
+      id: i.id, kind: i.kind, outcome: i.outcome, explanation: i.explanation,
+      votes: i.votes.map((x) => ({ model: x.model, decision: x.decision, valid: x.valid })),
+    })),
+    extraVotes: r.extraComments.flatMap((e) => e.votes.map((x) => ({ model: x.model, valid: x.valid, ...(x.discardedReason ? { discardedReason: x.discardedReason } : {}) }))),
+  }
+}
 type Label = Pick<Doc<"goldenLabels">, "submissionId" | "targetId" | "grader" | "source" | "outcome" | "explanation" | "overall">
 type Run = Pick<Doc<"evalRuns">, "_id" | "kind" | "status" | "runs" | "baseline" | "startedAt" | "submissionId" | "versions">
 
@@ -156,12 +174,10 @@ export function buildDashboard(subs: Sub[], labels: Label[], runs: Run[]) {
         if (valid.length === 3) fleissRows.push([yes, 3 - yes])
       }
     }
-    for (const e of s.machine.extraComments) {
-      for (const vt of e.votes) {
-        if (vt.discardedReason === "judge unavailable" || vt.discardedReason === "unparseable response") continue
-        m(vt.model).positives++
-        if (vt.valid) m(vt.model).validPositives++
-      }
+    for (const vt of s.machine.extraVotes) {
+      if (vt.discardedReason === "judge unavailable" || vt.discardedReason === "unparseable response") continue
+      m(vt.model).positives++
+      if (vt.valid) m(vt.model).validPositives++
     }
   }
   const models = [...perModel].map(([model, x]) => ({

@@ -3,10 +3,10 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ArrowRight, Check, Clock, Info, Loader2, Lock, MessageSquarePlus, Trash2 } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { SeverityChip, TopBar } from '@/components/rb'
-import { MODULE_LABEL, SCENARIOS, SEVERITIES } from '@/lib/scenario'
+import { SeverityChip, TopBar, cleanError } from '@/components/rb'
+import { SCENARIOS, SEVERITIES } from '@/lib/scenario'
 import type { AnyScenario, BuildScenario, DecisionScenario, Scenario, Severity } from '@/lib/scenario'
-import { BuildWorkspace } from '@/components/build-workspace'
+import { AssistantChat, BuildWorkspace } from '@/components/build-workspace'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
 
@@ -38,8 +38,11 @@ function useHydrated() {
 const ScenarioContext = createContext<AnyScenario>(SCENARIOS['ord-482-junior'])
 const useScenario = () => useContext(ScenarioContext)
 
+// Plain, candidate-facing names for each kind of assessment.
+const KIND_LABEL: Record<AnyScenario['kind'], string> = { code: 'Code review', decision: 'Design review', build: 'Build with AI' }
+
 const clean = (err: unknown, fallback: string) =>
-  err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : fallback
+  cleanError(err, fallback)
 
 function Assess() {
   const { t: token, g: groupToken } = Route.useSearch()
@@ -73,19 +76,22 @@ function GroupLanding({ groupToken }: { groupToken: string }) {
   const total = group.modules.reduce((s, m) => s + m.minutes, 0)
   return (
     <Shell>
-      <main className="mx-auto max-w-2xl px-6 py-12">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Assessment battery</p>
+      <main className="rb-rise mx-auto max-w-2xl px-4 py-12 sm:px-6">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Assessment battery</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{group.battery}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Hi {group.name}. This assessment has {group.modules.length} parts, about {total} minutes in total. Each part has its
           own timer that starts when you begin it, so you can take a break between parts.
         </p>
-        <ol className="mt-6 space-y-3">
+        <ol className="rb-stagger mt-6 space-y-3">
           {group.modules.map((m, i) => (
             <li key={m.scenarioId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-5">
-              <div>
-                <div className="text-xs text-muted-foreground">Part {i + 1} · {MODULE_LABEL[m.kind]} · {m.minutes} min</div>
+              <div className="flex items-center gap-4">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent font-mono text-sm font-semibold text-accent-foreground">{i + 1}</span>
+                <div>
+                <div className="text-xs text-muted-foreground">Part {i + 1} · {KIND_LABEL[m.kind]} · {m.minutes} min</div>
                 <div className="mt-1 font-semibold">{SCENARIOS[m.scenarioId]?.title ?? m.title}</div>
+                </div>
               </div>
               {m.status === 'submitted' ? (
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-success"><Check className="size-4" /> Done</span>
@@ -214,7 +220,7 @@ function Attempt({ token, session }: { token: string; session: Session }) {
   return (
     <div className="min-h-screen bg-background">
       <TopBar
-        subtitle={`${scenario.ticketId} · ${MODULE_LABEL[scenario.kind]} · ${scenario.level}`}
+        subtitle={scenario.kind === 'build' ? scenario.title : `${scenario.ticketId} · ${KIND_LABEL[scenario.kind]} · ${scenario.level}`}
         right={
           active && deadline ? (
             <>
@@ -225,13 +231,16 @@ function Attempt({ token, session }: { token: string; session: Session }) {
         }
       />
       {step === 'intro' && (
-        <Intro name={session.name} minutes={session.minutes} extraMinutes={session.extraMinutes} onStart={begin} starting={starting} error={startError} />
+        <Intro aiAssisted={session.aiAssisted} name={session.name} minutes={session.minutes} extraMinutes={session.extraMinutes} onStart={begin} starting={starting} error={startError} />
       )}
       {step === 'review' && scenario.kind === 'code' && (
-        <Review comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
+        <Review aiAssisted={session.aiAssisted} token={token} chat={draft?.chat ?? []} comments={comments} setComments={setComments} verdict={verdict} setVerdict={setVerdict} onNext={toFollowUps} />
       )}
       {step === 'review' && scenario.kind === 'decision' && (
         <DecisionForm
+          token={token}
+          aiAssisted={session.aiAssisted}
+          chat={draft?.chat ?? []}
           scenario={scenario}
           verdict={verdict}
           setVerdict={setVerdict}
@@ -291,9 +300,9 @@ function Loading() {
 
 function Notice({ title, body, icon, embedded }: { title: string; body: string; icon?: React.ReactNode; embedded?: boolean }) {
   const card = (
-    <main className="mx-auto max-w-lg px-6 py-20">
-      <div className="rounded-xl border border-border bg-card p-8 text-center">
-        <div className="mx-auto grid size-12 place-items-center rounded-full border border-foreground">{icon ?? <Lock className="size-5" />}</div>
+    <main className="rb-rise mx-auto max-w-lg px-4 py-16 sm:px-6 sm:py-20">
+      <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)]">
+        <div className="mx-auto grid size-12 place-items-center rounded-full bg-accent text-accent-foreground">{icon ?? <Lock className="size-5" />}</div>
         <h1 className="mt-4 text-xl font-semibold">{title}</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
       </div>
@@ -349,6 +358,7 @@ function Timer({ deadline, onExpire }: { deadline: number; onExpire: () => void 
 }
 
 function Intro({
+  aiAssisted,
   name,
   minutes,
   extraMinutes,
@@ -356,6 +366,7 @@ function Intro({
   starting,
   error,
 }: {
+  aiAssisted: boolean
   name: string
   minutes: number
   extraMinutes: number
@@ -367,21 +378,21 @@ function Intro({
   const bullets = scenario.kind === 'decision' ? scenario.constraints : scenario.criteria
   const steps =
     scenario.kind === 'code'
-      ? ['Read the pull request', 'Comment on lines and rate severity', 'Choose a verdict', 'Answer 3 short questions']
+      ? ["Read the pull request and the agent's notes", ...(aiAssisted ? ['Ask the agent about anything unclear'] : []), 'Comment on lines that need changes', 'Approve or request changes', 'Answer 3 short questions']
       : scenario.kind === 'decision'
-        ? ['Read the context and the AI recommendation', 'Approve or reject it', 'Explain flawed assumptions and ignored risks', 'Propose what you would do instead']
-        : ['Read the ticket', 'Build it with the AI assistant', 'Run the visible tests', 'Submit your final code']
+        ? ['Read the context and the AI recommendation', ...(aiAssisted ? ['Question the agent about its claims'] : []), 'Approve or reject it', 'Explain flawed assumptions and ignored risks', 'Propose what you would do instead']
+        : ['Read the task', 'Write code with the AI assistant', 'Run the tests', 'Submit']
   const note =
     scenario.kind === 'code'
       ? "A teammate's AI agent already opened a pull request for this ticket. Review it as you would any PR: leave line comments, rate severity, and decide whether to approve or request changes. AI-written code can be confidently wrong, so verify before you trust it. You can read every file, including unchanged helpers."
       : scenario.kind === 'decision'
-        ? 'An AI agent wrote this recommendation. It may contain sound ideas and flawed reasoning side by side. Judge each claim against the context and constraints.'
-        : "The assistant is usually right, but not always. Use it like a capable teammate: accept what's correct, verify what matters, and fix what isn't. Everything you ask and accept is recorded."
+        ? 'An AI agent wrote this recommendation. It may contain sound ideas and flawed reasoning side by side. Weigh each claim against the context and constraints.'
+        : "Use the AI assistant however you like, just as you would at work. It can be wrong, so check what it gives you. You're responsible for the code you submit. Your chat with the assistant is shared with the hiring team."
   return (
-    <main className="mx-auto grid max-w-6xl gap-10 px-6 py-12 lg:grid-cols-[1fr_340px]">
+    <main className="rb-rise mx-auto grid max-w-7xl items-start gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div>
-        <p className="font-mono text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          {MODULE_LABEL[scenario.kind]} · {scenario.ticketId}
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+          {KIND_LABEL[scenario.kind]}{scenario.kind === 'build' ? '' : ` · ${scenario.ticketId}`}
         </p>
         <h1 className="mt-3 text-3xl font-semibold leading-tight tracking-tight">{scenario.title}</h1>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -393,29 +404,29 @@ function Intro({
         </div>
         <p className="mt-6 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">{scenario.summary}</p>
 
-        <h2 className="mt-8 text-sm font-semibold">{scenario.kind === 'decision' ? 'Constraints' : 'Acceptance criteria'}</h2>
+        <h2 className="mt-8 text-sm font-semibold">{scenario.kind === 'decision' ? 'Constraints' : scenario.kind === 'build' ? 'What your code must do' : 'Acceptance criteria'}</h2>
         <ul className="mt-3 space-y-2.5">
           {bullets.map((c) => (
             <li key={c} className="flex gap-3 text-sm text-foreground/80">
-              <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <Check className="mt-0.5 size-4 shrink-0 text-primary" />
               {c}
             </li>
           ))}
         </ul>
 
-        <div className="mt-8 flex max-w-2xl gap-3 rounded-lg border border-border bg-card p-4">
-          <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="mt-8 flex max-w-2xl gap-3 rounded-xl border border-primary/20 bg-accent/60 p-4">
+          <Info className="mt-0.5 size-4 shrink-0 text-primary" />
           <p className="text-sm leading-relaxed text-muted-foreground">{note}</p>
         </div>
       </div>
 
-      <aside className="h-fit rounded-xl border border-border bg-card p-6">
+      <aside className="rounded-2xl border border-border bg-card p-6 shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)] lg:sticky lg:top-24">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">How it works</h2>
         <ol className="mt-4 space-y-3 text-sm">
           {steps.map(
             (s, i) => (
               <li key={s} className="flex items-center gap-3">
-                <span className="grid size-6 place-items-center rounded-full bg-muted font-mono text-xs font-semibold">{i + 1}</span>
+                <span className="grid size-6 shrink-0 place-items-center rounded-full bg-accent font-mono text-xs font-semibold text-accent-foreground">{i + 1}</span>
                 {s}
               </li>
             ),
@@ -429,7 +440,7 @@ function Intro({
         <button
           onClick={onStart}
           disabled={starting}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         >
           {starting ? <Loader2 className="size-4 animate-spin" /> : null} Start <ArrowRight className="size-4" />
         </button>
@@ -441,12 +452,18 @@ function Intro({
 }
 
 function Review({
+  aiAssisted,
+  token,
+  chat,
   comments,
   setComments,
   verdict,
   setVerdict,
   onNext,
 }: {
+  aiAssisted: boolean
+  token: string
+  chat: Array<{ id: string; type: string; data: string }>
   comments: Comment[]
   setComments: React.Dispatch<React.SetStateAction<Comment[]>>
   verdict: Verdict | null
@@ -457,6 +474,7 @@ function Review({
   const [activePath, setActivePath] = useState(scenario.files[0].path)
   const [composer, setComposer] = useState<{ line: number; severity: Severity; text: string; error: string } | null>(null)
   const [nextError, setNextError] = useState('')
+  const [prompt, setPrompt] = useState('')
   const file = useMemo(() => scenario.files.find((f) => f.path === activePath)!, [activePath, scenario])
 
   const openComposer = (line: number) => setComposer({ line, severity: 'high', text: '', error: '' })
@@ -522,6 +540,22 @@ function Review({
       </aside>
 
       <section className="min-w-0 flex-1 bg-card">
+        {scenario.rationale || scenario.assumptions?.length ? (
+          <div className="border-b border-border bg-background px-5 py-4">
+            <h2 className="text-[15px] font-semibold tracking-tight">The AI agent's notes</h2>
+            {scenario.rationale ? <p className="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">{scenario.rationale}</p> : null}
+            {scenario.assumptions?.length ? (
+              <ul className="mt-2 max-w-3xl list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/80">
+                {scenario.assumptions.map((a) => (
+                  <li key={a}>
+                    {a}
+                    {aiAssisted ? <QuestionThis assumption={a} setPrompt={setPrompt} /> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <span className="font-mono text-[13px] font-semibold">{file.path}</span>
           <span className="font-mono text-xs">
@@ -603,7 +637,7 @@ function Review({
                         <button onClick={() => setComposer(null)} className="rounded-md border border-border px-3 py-1.5 text-sm font-medium">
                           Cancel
                         </button>
-                        <button onClick={saveComment} className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground">
+                        <button onClick={saveComment} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground">
                           Add comment
                         </button>
                       </div>
@@ -616,8 +650,23 @@ function Review({
         </div>
       </section>
 
-      <aside className="border-t border-border bg-card p-5 lg:w-72 lg:shrink-0 lg:border-l lg:border-t-0">
-        <h2 className="text-sm font-semibold">Verdict</h2>
+      <aside className="flex flex-col border-t border-border bg-card lg:w-96 lg:shrink-0 lg:border-l lg:border-t-0">
+        {aiAssisted ? (<>
+        <div className="border-b border-border px-5 py-3">
+          <h2 className="text-[15px] font-semibold tracking-tight">Ask the agent</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">The AI that wrote this pull request. Ask why it did something.</p>
+        </div>
+        <AssistantChat
+          token={token}
+          chat={chat}
+          prompt={prompt}
+          setPrompt={setPrompt}
+          emptyText="Not sure about a change? Ask the agent to explain it."
+          className="lg:max-h-[55vh] lg:flex-1"
+        />
+        </>) : null}
+        <div className="border-t border-border p-5">
+        <h2 className="text-[15px] font-semibold tracking-tight">Verdict</h2>
         <p className="mt-1 text-xs text-muted-foreground">Would you merge this PR as-is?</p>
         <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-border">
           {(['request_changes', 'approve'] as Verdict[]).map((v) => (
@@ -636,13 +685,34 @@ function Review({
         {nextError ? <p className="mt-2 text-[13px] text-destructive">{nextError}</p> : null}
         <button
           onClick={goNext}
-          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
         >
           Continue to questions <ArrowRight className="size-4" />
         </button>
         <p className="mt-2 text-xs text-muted-foreground">Your review is locked once you continue.</p>
+        </div>
       </aside>
     </div>
+  )
+}
+
+/**
+ * Drafts a neutral question about one of the agent's assumptions into the chat
+ * (the candidate edits and sends it). Same wording for every assumption, so it
+ * never hints which ones are wrong.
+ */
+function QuestionThis({ assumption, setPrompt }: { assumption: string; setPrompt: (p: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setPrompt(`You assumed: "${assumption}" What is that based on?`)
+        document.getElementById('assistant-input')?.focus()
+      }}
+      className="ml-2 rounded border border-border px-1.5 py-0.5 align-middle text-[11px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      Question this
+    </button>
   )
 }
 
@@ -668,13 +738,13 @@ function FollowUp({
     onSubmit()
   }
   return (
-    <main className="mx-auto max-w-2xl px-6 py-12">
-      <p className="text-xs text-muted-foreground">Step 3 of 3 · Follow-up questions</p>
+    <main className="rb-rise mx-auto max-w-2xl px-4 py-12 sm:px-6">
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Step 3 of 3 · Follow-up questions</p>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">A few short questions about your review</h1>
       <p className="mt-2 text-sm text-muted-foreground">Two to four sentences each is plenty.</p>
-      <div className="mt-8 space-y-7">
+      <div className="mt-8 space-y-5">
         {useScenario().followUps.map((q, i) => (
-          <div key={q}>
+          <div key={q} className="rounded-xl border border-border bg-card p-5">
             <label htmlFor={`q${i}`} className="block text-sm font-semibold leading-relaxed">
               {i + 1}. {q}
             </label>
@@ -687,7 +757,7 @@ function FollowUp({
                 setAnswers((prev) => prev.map((a, j) => (j === i ? val : a)))
                 setEmptyError('')
               }}
-              className="mt-2 w-full resize-y rounded-lg border border-input bg-card px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+              className="mt-3 w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/15"
               maxLength={4000}
             />
           </div>
@@ -699,7 +769,7 @@ function FollowUp({
         <button
           onClick={trySubmit}
           disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
         >
           {submitting ? 'Submitting…' : 'Submit review'} <ArrowRight className="size-4" />
         </button>
@@ -711,38 +781,35 @@ function FollowUp({
 function Done({ name, token, groupToken }: { name?: string; token: string; groupToken?: string | null }) {
   const scenario = useScenario()
   return (
-    <main className="mx-auto max-w-lg px-6 py-20">
-      <div className="rounded-xl border border-border bg-card p-8 text-center">
-        <div className="mx-auto grid size-12 place-items-center rounded-full border border-foreground">
+    <main className="rb-rise mx-auto max-w-lg px-4 py-16 sm:px-6 sm:py-20">
+      <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)]">
+        <div className="mx-auto grid size-12 place-items-center rounded-full bg-success-soft text-success">
           <Check className="size-5" />
         </div>
-        <h1 className="mt-4 text-xl font-semibold">Review submitted</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Thanks{name ? `, ${name}` : ''}. Your response for {scenario.ticketId} is recorded.</p>
+        <h1 className="mt-4 text-xl font-semibold">Submitted</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Thanks{name ? `, ${name}` : ''}. We've received your work on "{scenario.title}".</p>
         <div className="mt-6 space-y-3 border-t border-border pt-5 text-left text-sm">
-          <p><span className="font-semibold">Now:</span> <span className="text-muted-foreground">a panel of independent AI judges scores your comments against the known issues.</span></p>
-          <p><span className="font-semibold">If they disagree</span> <span className="text-muted-foreground">on a serious item, a human reviews it.</span></p>
-          <p><span className="font-semibold">Then</span> <span className="text-muted-foreground">the hiring team receives an evidence-backed report.</span></p>
+          <p className="text-muted-foreground">The hiring team will look at your work and be in touch about next steps. You can close this page.</p>
           <p className="text-muted-foreground">
             If the hiring team shares your results, you'll find them at{' '}
-            <Link to="/results" search={{ t: token }} className="font-semibold text-foreground underline underline-offset-4">your results page</Link>,
+            <Link to="/results" search={{ t: token }} className="font-semibold text-primary underline underline-offset-4">your results page</Link>,
             where you can also ask for a human review.
           </p>
         </div>
         {groupToken ? (
-          <Link to="/assess" search={{ t: '', g: groupToken }} className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <Link to="/assess" search={{ t: '', g: groupToken }} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
             Continue to the next part <ArrowRight className="size-4" />
           </Link>
-        ) : (
-          <Link to="/" className="mt-6 inline-block text-sm font-semibold underline-offset-4 hover:underline">
-            Back to home
-          </Link>
-        )}
+        ) : null}
       </div>
     </main>
   )
 }
 
 function DecisionForm({
+  token,
+  aiAssisted,
+  chat,
   scenario,
   verdict,
   setVerdict,
@@ -752,6 +819,9 @@ function DecisionForm({
   submitting,
   error,
 }: {
+  token: string
+  aiAssisted: boolean
+  chat: Array<{ id: string; type: string; data: string }>
   scenario: DecisionScenario
   verdict: Verdict | null
   setVerdict: (v: Verdict) => void
@@ -762,6 +832,7 @@ function DecisionForm({
   error: string
 }) {
   const [localError, setLocalError] = useState('')
+  const [prompt, setPrompt] = useState('')
   const trySubmit = () => {
     if (!verdict) return setLocalError('Approve or reject the recommendation first.')
     if (answers.some((a) => !a.trim())) return setLocalError('Fill in all three sections (a few sentences each is enough).')
@@ -769,10 +840,10 @@ function DecisionForm({
     onSubmit()
   }
   return (
-    <main className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[1fr_1fr]">
+    <main className="rb-rise mx-auto grid max-w-7xl items-start gap-6 px-4 py-8 sm:px-6 lg:grid-cols-2">
       <section className="space-y-5">
         <div className="rounded-xl border border-border bg-card p-6">
-          <h2 className="text-sm font-semibold">Context</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">Context</h2>
           <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-foreground/80">
             {scenario.context.map((c) => <li key={c}>{c}</li>)}
           </ul>
@@ -783,7 +854,7 @@ function DecisionForm({
         </div>
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">AI agent's recommendation</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">AI agent's recommendation</h2>
             <span className="font-mono text-xs text-muted-foreground">{scenario.ticketId}.md</span>
           </div>
           <ol className="mt-3 space-y-2 font-mono text-[13px] leading-relaxed">
@@ -794,10 +865,29 @@ function DecisionForm({
               </li>
             ))}
           </ol>
+          <h3 className="mt-5 text-sm font-semibold">The agent's notes</h3>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/80">{scenario.rationale}</p>
+          <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/80">
+            {scenario.assumptions.map((a) => (
+              <li key={a}>
+                {a}
+                {aiAssisted ? <QuestionThis assumption={a} setPrompt={setPrompt} /> : null}
+              </li>
+            ))}
+          </ul>
         </div>
+        {aiAssisted ? (
+          <div className="flex flex-col rounded-xl border border-border bg-card">
+            <div className="border-b border-border px-5 py-3">
+              <h2 className="text-[15px] font-semibold tracking-tight">Ask the agent</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">The AI that wrote this recommendation. Ask it to justify a claim.</p>
+            </div>
+            <AssistantChat token={token} chat={chat} prompt={prompt} setPrompt={setPrompt} emptyText="Not sure about a claim? Ask the agent where it comes from." className="max-h-[55vh]" />
+          </div>
+        ) : null}
       </section>
       <section className="rounded-xl border border-border bg-card p-6">
-        <h2 className="text-sm font-semibold">Your decision</h2>
+        <h2 className="text-[15px] font-semibold tracking-tight">Your decision</h2>
         <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-border">
           {(['request_changes', 'approve'] as Verdict[]).map((v) => (
             <button
@@ -833,7 +923,7 @@ function DecisionForm({
           <button
             onClick={trySubmit}
             disabled={submitting}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
           >
             {submitting ? 'Submitting…' : 'Submit critique'} <ArrowRight className="size-4" />
           </button>

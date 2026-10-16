@@ -1,6 +1,6 @@
 import { v } from "convex/values"
-import { internalMutation, query } from "./_generated/server"
-import { requireRecruiter } from "./access"
+import { internalMutation, internalQuery, query } from "./_generated/server"
+import { own, requireMember } from "./access"
 
 // EX-2 / NFR-OBS-1: every judge call is logged with model, latency and output.
 
@@ -16,6 +16,20 @@ const traceValidator = v.object({
   output: v.string(),
   error: v.optional(v.string()),
   at: v.number(),
+})
+
+export const cacheGet = internalQuery({
+  args: { key: v.string() },
+  handler: async (ctx, args) =>
+    (await ctx.db.query("judgeCache").withIndex("by_key", (q) => q.eq("key", args.key)).first())?.text ?? null,
+})
+
+export const cachePut = internalMutation({
+  args: { key: v.string(), text: v.string() },
+  handler: async (ctx, args) => {
+    if (await ctx.db.query("judgeCache").withIndex("by_key", (q) => q.eq("key", args.key)).first()) return
+    await ctx.db.insert("judgeCache", { key: args.key, text: args.text.slice(0, 20_000), at: Date.now() })
+  },
 })
 
 export const record = internalMutation({
@@ -40,7 +54,8 @@ export const record = internalMutation({
 export const forSubmission = query({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     const rows = await ctx.db
       .query("judgeCalls")
       .withIndex("by_submission", (q) => q.eq("submissionId", args.id))

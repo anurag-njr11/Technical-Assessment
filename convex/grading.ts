@@ -1,12 +1,17 @@
 import { v } from "convex/values"
 import { internalAction } from "./_generated/server"
+import type { ActionCtx } from "./_generated/server"
+import type { Id } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
-import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
+import { ANSWER_KEYS, ASSUMPTION_KEYS, SCENARIO_META } from "./answerKey"
 import type { AnswerKey, KeyItem } from "./answerKey"
-import { PROMPT_VERSION, RUBRIC_VERSION, getPanel, liveAsker, redact } from "./judges"
-import type { Asker, Judge, JudgeAnswer, Trace } from "./judges"
+import { PAUSED, PROMPT_VERSION, RUBRIC_VERSION, creditsExhausted, getPanel, liveAsker, redact } from "./judges"
+import type { Asker, Judge, JudgeAnswer, JudgeCache, Trace } from "./judges"
 import { SCORING_VERSION, computeScore } from "./scoring"
-import { gradeBuild } from "./buildScenario"
+import { gradeTrajectory } from "./trajectory"
+import type { Assumption } from "./trajectory"
+import { buildTask } from "./buildScenario"
+import { SCENARIOS } from "../src/lib/scenario"
 import { applyConfig } from "./items"
 import type { CommentClass, ExtraComment, ItemResult, Result } from "./scoring"
 
@@ -315,10 +320,18 @@ export async function gradeSubmission(
   const extraComments: ExtraComment[] = []
   const reviewReasons: string[] = []
 
+  const yesVotes = (x: Consensus) => x.votes.filter((v) => v.valid && v.decision).length
+  const distance = (item: KeyItem, c: Comment) => (c.line < item.lineStart ? item.lineStart - c.line : c.line > item.lineEnd ? c.line - item.lineEnd : 0)
   const record = (item: KeyItem, consensus: Consensus, c: Comment) => {
     const prev = itemState.get(item.id)
-    // GR-18: the best pair wins (a positive consensus from any comment).
-    if (!prev || (!prev.consensus.decision && consensus.decision)) itemState.set(item.id, { consensus, comment: c })
+    // GR-18: the best pair wins: a positive consensus from any comment; without one,
+    // the comment with more valid "yes" votes, then the one closest to the item's lines.
+    const better = !prev || (!prev.consensus.decision && (
+      consensus.decision ||
+      yesVotes(consensus) > yesVotes(prev.consensus) ||
+      (yesVotes(consensus) === yesVotes(prev.consensus) && distance(item, c) < distance(item, prev.comment))
+    ))
+    if (better) itemState.set(item.id, { consensus, comment: c })
     return consensus.decision
   }
 
@@ -417,8 +430,9 @@ export async function gradeSubmission(
             return !any || evidenceIsReal(typeof j.evidence === "string" ? j.evidence : "", text)
           })
         const maj = (k: string) => valid.length >= 2 && valid.filter((j) => j[k] === true).length > valid.length / 2
-        const score = ["addresses_question", "specific", "actionable"].filter(maj).length
-        return { question: f.question, score, votes: valid.length }
+        const CHECKS: Array<[string, string]> = [["addresses_question", "Answers the question"], ["specific", "Specific to this code"], ["actionable", "Actionable"]]
+        const checks = CHECKS.map(([k, label]) => ({ label, passed: maj(k), yes: valid.filter((j) => j[k] === true).length }))
+        return { question: f.question, score: checks.filter((c) => c.passed).length, votes: valid.length, checks }
       }),
     )
     const value = scored.reduce((s2, x) => s2 + x.score, 0) / (3 * scored.length)
@@ -463,14 +477,60 @@ export async function gradeSubmission(
   }
 }
 
+/** The AI agent's stated assumptions (candidate-visible text) joined with the server-only key. */
+function assumptionsFor(scenarioId: string, key: AnswerKey): Assumption[] {
+  const texts = (SCENARIOS[scenarioId] as { assumptions?: string[] } | undefined)?.assumptions ?? []
+  return (ASSUMPTION_KEYS[scenarioId] ?? []).map((a, i) => ({
+    id: `A${i + 1}`,
+    text: texts[i] ?? "",
+    flawed: a.flawed,
+    itemId: a.itemId,
+    why: key.items.find((it) => it.id === a.itemId)?.description,
+  }))
+}
+
+/** Transient failures (not credits, not bad input) are retried this many times, 2 and 8 minutes apart. */
+const GRADE_RETRIES = 2
+const UNREACHABLE = "AI judges unreachable"
+/** Every judge call failed (network, provider outage): worth retrying before settling for a judge-less grade. */
+const allFailed = (traces: Trace[]) => traces.length > 0 && traces.every((t) => !t.ok)
+const retryLater = (ctx: ActionCtx, submissionId: Id<"submissions">, attempt: number) =>
+  ctx.scheduler.runAfter(2 * 60_000 * 4 ** attempt, internal.grading.grade, { submissionId, attempt: attempt + 1 })
+
 export const grade = internalAction({
-  args: { submissionId: v.id("submissions") },
+  args: { submissionId: v.id("submissions"), attempt: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const sub = await ctx.runQuery(internal.submissions.getInternal, { id: args.submissionId })
     if (!sub) return
+    const cache: JudgeCache = {
+      get: (key) => ctx.runQuery(internal.tracing.cacheGet, { key }),
+      put: async (key, text) => { await ctx.runMutation(internal.tracing.cachePut, { key, text }) },
+    }
     if (SCENARIO_META[sub.scenarioId]?.kind === "build") {
-      const result = gradeBuild(sub.scenarioId, sub.build?.code ?? "", sub.build?.events ?? [])
-      await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
+      const traces: Trace[] = []
+      // Hidden tests run in the sandbox; if it fails, gradeBuild falls back to source checks.
+      const hidden = await ctx.runAction(internal.sandbox.run, { scenarioId: sub.scenarioId, code: sub.build?.code ?? "" }).catch(() => [])
+      try {
+        const result = await gradeTrajectory(
+          {
+            scenarioId: sub.scenarioId,
+            code: sub.build?.code ?? "",
+            events: sub.build?.events ?? [],
+            candidateName: sub.candidateName,
+            candidateEmail: sub.candidateEmail,
+            task: buildTask(sub.scenarioId),
+            hidden,
+          },
+          liveAsker(traces, cache),
+        )
+        if (creditsExhausted(traces)) await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error: PAUSED })
+        else if (allFailed(traces) && (args.attempt ?? 0) < GRADE_RETRIES) await retryLater(ctx, args.submissionId, args.attempt ?? 0)
+        else await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
+      } finally {
+        if (traces.length) {
+          await ctx.runMutation(internal.tracing.record, { submissionId: args.submissionId, promptVersion: PROMPT_VERSION, traces })
+        }
+      }
       return
     }
     const key = ANSWER_KEYS[sub.scenarioId]
@@ -481,12 +541,13 @@ export const grade = internalAction({
     const traces: Trace[] = []
     try {
       const meta = SCENARIO_META[sub.scenarioId]
-      const config = await ctx.runQuery(internal.items.configInternal, { scenarioId: sub.scenarioId })
+      const config = await ctx.runQuery(internal.items.configInternal, { scenarioId: sub.scenarioId, workspaceId: sub.workspaceId })
       const examples = process.env.RAG_EXAMPLES === "on"
-        ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId })
+        ? await ctx.runQuery(internal.golden.examplesInternal, { scenarioId: sub.scenarioId, workspaceId: sub.workspaceId })
         : []
       const configured = applyConfig(key, config)
-      const result = await gradeSubmission(
+      const ask = liveAsker(traces, cache)
+      let result = await gradeSubmission(
         {
           comments: sub.comments,
           verdict: sub.verdict,
@@ -495,17 +556,43 @@ export const grade = internalAction({
           followUps: meta?.kind === "code" ? sub.followUps : undefined,
         },
         configured.key,
-        liveAsker(traces),
+        ask,
         undefined,
         { examples },
       )
+      // Code review with the AI agent chat: attach the trajectory council on top of M1.
+      // Graded even without prompts: never questioning the agent's assumptions is itself evidence.
+      const events = sub.build?.events ?? []
+      const assumptions = assumptionsFor(sub.scenarioId, configured.key)
+      if (assumptions.length || events.some((e) => e.type === "ai_prompt")) {
+        result = await gradeTrajectory(
+          {
+            scenarioId: sub.scenarioId,
+            code: [`Verdict: ${sub.verdict}`, ...sub.comments.map((c) => `${c.file}:${c.line} ${c.text}`)].join("\n"),
+            events,
+            base: result,
+            assumptions,
+            task: meta?.title,
+            candidateName: sub.candidateName,
+            candidateEmail: sub.candidateEmail,
+          },
+          ask,
+        )
+      }
+      // Budget guard: don't escalate every submission as "judges unavailable" when the account is out of credits.
+      if (creditsExhausted(traces)) throw new Error(PAUSED)
+      // On the last attempt the deterministic grade is kept (flagged "AI judges were unavailable").
+      if (allFailed(traces) && (args.attempt ?? 0) < GRADE_RETRIES) throw new Error(UNREACHABLE)
       if (configured.note) result.configNote = configured.note
       await ctx.runMutation(internal.submissions.saveResult, { id: args.submissionId, result })
     } catch (err) {
-      await ctx.runMutation(internal.submissions.saveError, {
-        id: args.submissionId,
-        error: err instanceof Error ? err.message : "Grading failed",
-      })
+      const error = err instanceof Error ? err.message : "Grading failed"
+      const attempt = args.attempt ?? 0
+      if (error !== PAUSED && attempt < GRADE_RETRIES) {
+        await retryLater(ctx, args.submissionId, attempt)
+      } else {
+        await ctx.runMutation(internal.submissions.saveError, { id: args.submissionId, error })
+      }
     } finally {
       if (traces.length) {
         await ctx.runMutation(internal.tracing.record, {

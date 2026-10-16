@@ -3,73 +3,78 @@
 Work deliberately deferred so the website could be demo-ready. Each item names
 the spec requirement it completes. Tick items off as they land.
 
-## A. Run without Macaly (platform independence)
+## A. Platform independence (done)
 
-Macaly is only used for AI judge calls and verification emails; the app and
-Convex run anywhere. To remove the dependency:
+Judges and agents call any OpenAI-compatible endpoint (Gemini, Groq,
+OpenRouter or local Ollama) and emails go through Resend. Remaining:
 
-- [ ] **Judge transport adapter.** Replace `callModel()` in `convex/judges.ts`
-      with a provider switch chosen by env var `LLM_PROVIDER`:
-  - [ ] `openrouter`: one `OPENROUTER_API_KEY`, same model names as today
-        (`https://openrouter.ai/api/v1/chat/completions`, OpenAI-compatible body)
-  - [ ] `direct`: per-provider keys (Google AI Studio, Anthropic, Groq/Together for Llama,
-        Mistral, DeepSeek, Alibaba) with a small request/response mapper each
-  - [ ] `ollama`: local models via `http://localhost:11434/api/chat` for free development
-  - [ ] Keep `macaly` as one option so the current deployment keeps working
-  - [ ] Unit test each mapper with a stubbed `fetch`
-- [ ] **Verification email.** Replace `convex/ResendOTP.ts`'s Macaly OTP endpoint
-      with Resend (`RESEND_API_KEY`) or SMTP; keep the 6-digit, 15-minute code.
-- [ ] **Remove Macaly-only UI/dev bits.** Make `<MacalyBridge>` in
-      `src/routes/__root.tsx` optional and drop `macalyTagger` / Macaly
-      `allowedHosts` from `vite.config.ts` when not on Macaly.
-- [ ] **Local Convex.** Document `npx convex dev` (cloud free tier) and the
-      open-source self-hosted Convex backend in the README.
-- [ ] **Budget guard.** When the provider returns 402/quota errors, show a
+- [x] **Per-provider direct keys**: Gemini, Groq, OpenRouter and local Ollama per model (`convex/providers.ts`) (SEC-16).
+- [x] **Budget guard.** When the provider returns 402/quota errors, show a
       "grading paused: AI credits exhausted" banner instead of escalating every
       submission.
 
 ## B. Deferred features (by roadmap phase)
 
 ### P2 · Trustworthy
-- [ ] Non-native-English perturbation (needs an LLM rewrite step) (FB-2)
-- [ ] Incremental metric aggregates so the dashboard covers > 300 submissions (REL-8)
-- [ ] Run the regression gate automatically in CI against a staging deployment with real models (REL-7)
+- [x] Non-native-English perturbation (needs an LLM rewrite step) (FB-2)
+- [x] Incremental metric aggregates so the dashboard covers > 300 submissions (REL-8): slim `metricRows`, 2,000 submissions
+- [x] Run the regression gate automatically in CI against a staging deployment with real models (REL-7): needs the `CONVEX_DEPLOY_KEY_STAGING` secret
 
 ### P3 · Complete M1
-- [ ] Scenario variants (2–3 per issue) with rotation against leakage (SC-7)
-- [ ] Email invite links to candidates directly (FR-R-6)
-- [ ] Role / level / date filters on the dashboard once there are many scenarios (FR-R-5)
+- [x] Scenario variants with rotation against leakage (SC-7): PAY-217 / SUB-118 rotate; more equivalent variants are content work
+- [x] Email invite links to candidates directly (FR-R-6)
+- [x] Role / level / date filters on the dashboard once there are many scenarios (FR-R-5)
 
 ### P4 · Modules
-- [ ] M3 Directed Build: real browser IDE with a sandboxed runtime (Judge0/Docker),
-      hidden tests executed server-side, live LLM assistant behind the mutation proxy
-      (today: scripted assistant + signature checks + in-browser visible tests) (§7.3)
-- [ ] M3: council scoring of *how* faults were caught and of instruction quality
-      (today: deterministic heuristic) (§7.3)
-- [ ] M3: human overrides of Directed Build items (today: resolve with a note only)
-- [ ] M2: more decision briefs; per-section judging instead of one combined critique
+- [x] M3: live LLM assistant behind the proxy, with planted faults still scripted (P7, AS-1–6)
+- [x] M3: council scoring of *how* faults were caught and of instruction quality (P7, trajectory council §10.8)
+- [x] M3 Directed Build: hidden tests executed server-side in a QuickJS WebAssembly sandbox (`convex/sandbox.ts`) (§7.3)
+- [ ] M3: a full browser IDE (multiple files, a terminal) instead of the single-file editor
+- [x] M3: human overrides of Directed Build items
+- [x] M2: a second decision brief (ADR-044, senior)
+- [ ] M2: per-section judging instead of one combined critique
+
+### P7 · AI-native flow
+- [x] Enforce the assessment's **AI-assisted** flag in the candidate flow: hide the agent chat / assistant when off (today it is a label only) (FR-R-20)
+- [x] Assessment **level** selects scenario content when a scenario exists for that level (§29.10)
+- [ ] Calibrate the 50/50 deterministic/judged blend and the efficiency constant (4000 tokens per outcome) against human-graded trajectories (§11.4, §29.8–9)
+- [x] Human overrides of trajectory findings (dimensions and overall re-scored)
+- [x] Batch trajectory questions per judge call (NFR-COST-1); `TRAJECTORY_BATCH=off` keeps single-question mode for comparison runs
+- [ ] Measure and tune the PR-author agent (`AUTHOR_SYSTEM`) on pilot transcripts: concedes too early? volunteers flaws? (needs transcripts)
+- [x] Pin a model per scenario version (`SCENARIO_META.agentModel`); every reply records its model (§7.4)
+- [x] Stream assistant replies instead of waiting for the full response
+- [x] Agent notes (rationale + assumptions) for ADR-031 so Decision Review can use the agent chat too
+- [x] Email the assessment link / QR to candidates; per-candidate expiry on joined links (7 days)
+- [x] Dedupe joins across devices (same email: the existing link is emailed, never returned)
+- [x] Export the comparison view (CSV) for hiring committees; PDF via browser print
+- [x] Filter the recruiter's assessment list by role and status once there are many
 
 ### P5 · Customization
 - [ ] Scenario builder: LLM generates a clean artifact, scripted mutations insert issues,
       human verifies (SB-1, SB-2)
 - [ ] Job-analysis intake and company-specific scenarios from postmortems (CU-4)
 - [ ] Bring-your-own-code scenarios (CU-5)
-- [ ] 2PL IRT, test equating across variants (SCR-3, SCR-4); today: Rasch (1PL) estimates
+- [x] 2PL IRT from 30 submissions per scenario (SCR-3)
+- [ ] Test equating across variants (SCR-4): variants exist now; needs response data
 
 ### P6 · Scale & compliance
-- [ ] Multi-tenant workspaces (one workspace per company, scoped queries) (§21.2)
-- [ ] SSO: Google Workspace and SAML (SEC-4)
-- [ ] ATS integrations (Greenhouse/Lever webhooks); today: CSV export
+- [x] Multi-tenant workspaces (one workspace per company, scoped queries) (§21.2)
+- [x] SSO: Google Workspace (SEC-4)
+- [ ] SAML (not supported by Convex Auth; needs an IdP broker such as WorkOS)
+- [x] ATS integration: signed `submission.graded` webhook + CSV export
+- [ ] Native Greenhouse/Lever API connectors
 - [ ] Embedding-based retrieval (pgvector or Convex vector index) for RAG examples;
       today: lexical similarity (KA-1, KA-2)
 - [ ] QLoRA fine-tuned first-pass judge + cascade routing after ≥ 500 labels (KA-5–7)
-- [ ] Shadow-mode grading of candidate configs on live traffic (EX-3)
-- [ ] Result caching by (submission hash, rubric, model) and a retrying queue (§21.2)
-- [ ] Data-retention policy with scheduled deletion (SEC-17)
+- [x] Shadow-mode grading of candidate configs on live traffic (EX-3)
+- [x] Result caching by (prompt version, model, prompt) and a retrying queue (§21.2)
+- [x] Data-retention policy with scheduled deletion (SEC-17): `RETENTION_DAYS`
 - [ ] Counsel review of notice templates and the methodology page (§20)
 
 ## C. Tests trimmed or deferred for the demo build
 
 - [ ] Browser end-to-end tests (Playwright) of the recruiter pages against a live Convex dev deployment
-- [ ] Unit tests for the Directed Build worker-based visible test runner (browser only)
-- [ ] Real-model evaluation suite in CI (REL-10)
+- [x] Hidden-test sandbox unit tests, including hostile code (the browser worker for visible tests remains untested)
+- [ ] Browser end-to-end test of the P7 flow: create assessment → link → agent chat → submit → assessment page → compare → report
+- [ ] Live-model evaluation of the trajectory council (retest stability, perturbation, injection inside chat messages) (REL-3, REL-10, FB-2)
+- [x] Real-model evaluation: `npm run eval` (golden set + adversarial suite) and the CI regression gate; first published run pending free keys

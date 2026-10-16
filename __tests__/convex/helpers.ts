@@ -23,9 +23,14 @@ const KEYWORDS: Array<[RegExp, string, string]> = [
   [/only asserts the status code/, "assert", "I4"],
 ]
 
-export type Mode = "honest" | "fabricate" | "down" | "garbage" | "vague"
+export type Mode = "honest" | "fabricate" | "down" | "garbage" | "vague" | "broke"
 export const modes: Record<string, Mode> = {}
 export const prompts: string[] = []
+/** Every model in the default panel, for tests that switch them all at once. */
+export const ALL_MODELS = [
+  "google/gemini-3.6-flash", "qwen/qwen3-235b-a22b-2507", "anthropic/claude-sonnet-5",
+  "mistralai/mistral-large", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat",
+]
 
 function between(s: string, a: string, b: string) {
   const i = s.indexOf(a)
@@ -35,9 +40,14 @@ function between(s: string, a: string, b: string) {
 
 function fakeJudge(model: string, prompt: string) {
   const mode = modes[model] ?? "honest"
-  if (mode === "down") return new Response("unavailable", { status: 503 })
-  if (mode === "garbage") return Response.json({ success: true, text: "I think it's fine!" })
+  if (mode === "down") return new Response("unavailable", { status: 500 })
+  if (mode === "broke") return new Response("insufficient credits", { status: 402 })
+  if (mode === "garbage") return chat("I think it's fine!")
 
+  if (prompt.includes("<comment_to_rewrite>")) {
+    // Non-native rewrite: drop articles, keep the technical words.
+    return chat(between(prompt, "<comment_to_rewrite", "</comment_to_rewrite>").replace(/\b(the|a|an)\s/gi, ""))
+  }
   const comment = between(prompt, "<candidate_comment", "</candidate_comment>")
   const lc = comment.toLowerCase()
   let answer: Record<string, unknown>
@@ -52,6 +62,28 @@ function fakeJudge(model: string, prompt: string) {
       proposes_fix: hit && /should|use |fix/.test(lc),
       evidence: hit ? (mode === "fabricate" ? "a quote the candidate never wrote" : kw) : "",
     }
+  } else if (prompt.includes("<candidate_answer>")) {
+    // Follow-up checklist: answers the question, is specific only if it names code, and is always actionable.
+    const ans = between(prompt, "<candidate_answer", "</candidate_answer>")
+    answer = {
+      addresses_question: true,
+      specific: /\w+\.\w+|\(\)/.test(ans),
+      actionable: true,
+      evidence: ans.split(/\s+/).slice(0, 3).join(" "),
+    }
+  } else if (prompt.includes("<transcript>")) {
+    // Trajectory question: a fair judge credits good behaviour and denies bad, quoting the final review event.
+    const last = between(prompt, "<transcript>", "</transcript>").split("\n").filter((l) => l.startsWith("[")).pop() ?? ""
+    const [, id = "", text = ""] = last.match(/^\[([^\]]+)\] (.*)$/) ?? []
+    const judge1 = (question: string) =>
+      /without checking|non-issue|This assumption is correct/.test(question)
+        ? { decision: false, evidence: "", event_ids: [] }
+        : { decision: true, evidence: text.split(/\s+/).slice(0, 4).join(" "), event_ids: [id] }
+    if (prompt.includes("Questions:\n- [")) {
+      // Batched trajectory council: one answer per "- [ID] question" line.
+      const qs = [...prompt.split("Questions:\n")[1].matchAll(/^- \[([^\]]+)\] (.*)$/gm)]
+      answer = { answers: qs.map(([, qid, q]) => ({ id: qid, ...judge1(q) })) }
+    } else answer = judge1(prompt.split("Question:")[1] ?? "")
   } else if (prompt.includes("INTENTIONAL")) {
     const hit = lc.includes("cap")
     answer = { objects_to_behavior: hit, evidence: hit ? "cap" : "" }
@@ -63,18 +95,24 @@ function fakeJudge(model: string, prompt: string) {
       evidence: comment.split(/\s+/).slice(0, 3).join(" "),
     }
   }
-  return Response.json({ success: true, text: "```json\n" + JSON.stringify(answer) + "\n```" })
+  return chat("```json\n" + JSON.stringify(answer) + "\n```")
 }
+
+const chat = (content: string) => Response.json({ choices: [{ message: { content } }] })
+
+/** Every URL the fake fetch received, for tests that check routing. */
+export const urls: string[] = []
 
 export function installFakeJudges() {
   for (const k of Object.keys(modes)) delete modes[k]
   prompts.length = 0
-  process.env.MACALY_API_TOKEN = "test-token"
-  process.env.MACALY_BASE_URL = "https://macaly.test"
-  process.env.MACALY_CHAT_ID = "test-chat"
+  urls.length = 0
+  process.env.LLM_BASE_URL = "https://llm.test/v1"
+  process.env.LLM_API_KEY = "test-key"
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init: { body: string }) => {
+    vi.fn(async (url: string, init: { body: string }) => {
+      urls.push(String(url))
       const body = JSON.parse(init.body) as { model: string; messages: Array<{ content: string }> }
       prompts.push(body.messages[1].content)
       return fakeJudge(body.model, body.messages[1].content)
@@ -96,7 +134,7 @@ export async function seedUser(t: T, email: string, verified = true) {
 
 export async function seedOwner(t: T, email = "owner@acme.com") {
   const owner = await seedUser(t, email)
-  await t.withIdentity({ subject: owner }).mutation(api.access.claimWorkspace, {})
+  await t.withIdentity({ subject: owner }).mutation(api.access.createWorkspace, { name: "Acme" })
   return t.withIdentity({ subject: owner })
 }
 

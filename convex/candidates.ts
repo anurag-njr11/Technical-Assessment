@@ -5,9 +5,10 @@ import type { Doc, Id } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
 import { commentValidator, verdictValidator } from "./schema"
 import { BATTERIES, SCENARIO_META } from "./answerKey"
-import { requireRecruiter } from "./access"
+import { own, requireMember, requireRecruiter } from "./access"
 import { LIMITS, hit } from "./rateLimit"
 import { insertSubmission, validateWork } from "./submissions"
+import { siteUrl } from "./email"
 
 // FR-C-12 single-use invite links, FR-C-13 autosave, FR-C-14 enforced timer,
 // FR-C-16 extra-time accommodations.
@@ -15,18 +16,30 @@ import { insertSubmission, validateWork } from "./submissions"
 /** Submissions are accepted this long after the deadline (network slack). */
 export const GRACE_MS = 2 * 60 * 1000
 
-function newToken(): string {
+export function newToken(): string {
   const bytes = new Uint8Array(24)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
 }
 
-async function byToken(ctx: { db: QueryCtx["db"] }, token: string): Promise<Doc<"candidates"> | null> {
+export async function byToken(ctx: { db: QueryCtx["db"] }, token: string): Promise<Doc<"candidates"> | null> {
   if (!/^[0-9a-f]{48}$/.test(token)) return null
   return await ctx.db
     .query("candidates")
     .withIndex("by_token", (q) => q.eq("token", token))
     .unique()
+}
+
+/** Time limit before accommodations: the assessment's if the candidate joined via one, else the scenario's. */
+async function baseMinutes(ctx: { db: QueryCtx["db"] }, c: Doc<"candidates">): Promise<number> {
+  const a = c.assessmentId ? await ctx.db.get(c.assessmentId) : null
+  return a?.minutes ?? SCENARIO_META[c.scenarioId].minutes
+}
+
+/** FR-R-20: the agent chat / assistant is on unless the candidate joined an assessment with AI-assisted off. */
+export async function aiAllowed(ctx: { db: QueryCtx["db"] }, c: Doc<"candidates">): Promise<boolean> {
+  const a = c.assessmentId ? await ctx.db.get(c.assessmentId) : null
+  return a?.aiAssisted ?? true
 }
 
 /** Throws unless the attempt behind `token` is in progress and within time. */
@@ -77,6 +90,7 @@ export const create = mutation({
     for (const scenarioId of scenarioIds) {
       const token = newToken()
       const id = await ctx.db.insert("candidates", {
+        workspaceId: me.workspaceId,
         name,
         email,
         scenarioId,
@@ -92,6 +106,15 @@ export const create = mutation({
       })
       first ??= { id, token }
     }
+    // FR-R-6: email the personal link (battery: the one group link).
+    if (email) {
+      const link = siteUrl(groupToken ? `/assess?g=${groupToken}` : `/assess?t=${first!.token}`)
+      await ctx.scheduler.runAfter(0, internal.email.send, {
+        to: email,
+        subject: "Your ReviewBench assessment",
+        text: `Hi ${name},\n\nYou've been invited to an engineering assessment. Open your personal link when you're ready; the timer starts only when you press Start.\n\n${link}\n\nThis link is for you only. Please don't share it.`,
+      })
+    }
     return { ...first!, groupToken: groupToken ?? null }
   },
 })
@@ -99,8 +122,8 @@ export const create = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
-    const rows = await ctx.db.query("candidates").withIndex("by_createdAt").order("desc").take(200)
+    const me = await requireMember(ctx)
+    const rows = await ctx.db.query("candidates").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(200)
     return rows.map((c) => ({
       _id: c._id,
       name: c.name,
@@ -122,9 +145,8 @@ export const list = query({
 export const revoke = mutation({
   args: { id: v.id("candidates") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const c = await ctx.db.get(args.id)
-    if (!c) return
+    const me = await requireRecruiter(ctx)
+    const c = own(me, await ctx.db.get(args.id), "Candidate not found.")
     if (c.status === "submitted") throw new Error("This candidate has already submitted.")
     await ctx.db.patch(args.id, { status: "revoked" })
   },
@@ -153,8 +175,9 @@ export const session = query({
       kind: meta.kind,
       groupToken: c.groupToken ?? null,
       status: c.status,
-      minutes: meta.minutes + c.extraMinutes,
+      minutes: (await baseMinutes(ctx, c)) + c.extraMinutes,
       extraMinutes: c.extraMinutes,
+      aiAssisted: await aiAllowed(ctx, c),
       deadline: c.deadline ?? null,
       graceMs: GRACE_MS,
       draft: draft
@@ -184,9 +207,10 @@ export const start = mutation({
     if (c.status === "revoked") throw new Error("This assessment link has been withdrawn.")
     if (c.status === "submitted") throw new Error("This assessment has already been submitted.")
     if (c.status === "started") return { deadline: c.deadline! }
+    if (c.expiresAt && Date.now() > c.expiresAt) throw new Error("This link has expired. Ask the hiring team for a new one.")
     const meta = SCENARIO_META[c.scenarioId]
     const startedAt = Date.now()
-    const deadline = startedAt + (meta.minutes + c.extraMinutes) * 60 * 1000
+    const deadline = startedAt + ((await baseMinutes(ctx, c)) + c.extraMinutes) * 60 * 1000
     await ctx.db.patch(c._id, { status: "started", startedAt, deadline })
     await ctx.db.insert("autosaves", {
       candidateId: c._id,
@@ -249,7 +273,10 @@ export const autoClose = internalMutation({
       comments: draft?.comments ?? [],
       answers: draft?.answers ?? [],
       autoSubmitted: true,
-      build: SCENARIO_META[c.scenarioId].kind === "build" ? { code: draft?.code ?? "", events: draft?.events ?? [] } : undefined,
+      build:
+        SCENARIO_META[c.scenarioId].kind === "build"
+          ? { code: draft?.code ?? "", events: draft?.events ?? [] }
+          : draft?.events?.length ? { code: "", events: draft.events } : undefined,
     })
   },
 })

@@ -5,10 +5,11 @@
 // and a few responses carry planted faults, so every candidate faces the same
 // faults. Faults the candidate never triggers are "not exposed" and excluded.
 
+import { SCENARIOS } from "../src/lib/scenario"
 import { WEIGHTS, band } from "./scoring"
 import type { ItemResult, Result } from "./scoring"
 
-export type BuildEvent = { id: string; t: number; type: string; data?: string }
+export type BuildEvent = { id: string; t: number; type: string; data?: string; tokens?: { input: number; output: number } }
 
 export type Fault = {
   id: string
@@ -35,9 +36,52 @@ export const BUILD_FAULTS: Record<string, Fault[]> = {
       present: (c) => !/to(Upper|Lower)Case\s*\(/.test(c),
     },
   ],
+  "orders-api-build": [
+    {
+      id: "F1", title: "Search text is concatenated into the SQL (SQL injection)", category: "Security", severity: "critical", weight: 4,
+      present: (c) => /\$\{\s*query\b|['"`]\s*\+\s*query\b|\bquery\s*\+\s*['"`]/.test(c),
+    },
+    {
+      id: "F2", title: "No user_id filter, so any user can read everyone's orders (IDOR)", category: "Security", severity: "critical", weight: 4,
+      present: (c) => !/user_id\s*=\s*(\?|\$\d)/i.test(c),
+    },
+    {
+      id: "F3", title: "Calls db.queryParams(), which does not exist", category: "Hallucination", severity: "high", weight: 3,
+      present: (c) => /\.queryParams\s*\(/.test(c),
+    },
+    {
+      id: "F4", title: "No LIMIT, so a broad search returns millions of rows", category: "Performance", severity: "medium", weight: 2,
+      present: (c) => !/\bLIMIT\b/i.test(c),
+    },
+  ],
 }
 
-type Script = { intent: RegExp; text: string; code: string; fault?: string }
+/**
+ * Candidate-visible task text, for the live assistant and trajectory judges:
+ * the ticket for builds; the ticket, diff and the agent's rationale for code reviews.
+ */
+export function buildTask(scenarioId: string): string {
+  const s = SCENARIOS[scenarioId]
+  if (s?.kind === "build") {
+    return [s.title, s.summary, "Requirements:", ...s.criteria.map((c) => `- ${c}`), "API reference:", ...s.apiReference.map((a) => `- ${a}`)].join("\n")
+  }
+  if (s?.kind === "code") {
+    const diff = s.files.flatMap((f) => [`--- ${f.path}`, ...f.lines.map((l) => `${l.kind === "add" ? "+" : " "}${l.n}: ${l.code}`)])
+    return [
+      `${s.ticketId}: ${s.title}`, s.summary, "Acceptance criteria:", ...s.criteria.map((c) => `- ${c}`),
+      "Diff:", ...diff, "Your rationale:", s.rationale, "Your reasoning behind the changes:", ...s.assumptions.map((a) => `- ${a}`),
+    ].join("\n")
+  }
+  if (s?.kind === "decision") {
+    return [
+      `${s.ticketId}: ${s.title}`, s.summary, "Context:", ...s.context.map((c) => `- ${c}`), "Constraints:", ...s.constraints.map((c) => `- ${c}`),
+      "Your recommendation:", ...s.recommendation.map((r) => `- ${r}`), "Your rationale:", s.rationale, "Your assumptions:", ...s.assumptions.map((a) => `- ${a}`),
+    ].join("\n")
+  }
+  return ""
+}
+
+export type Script = { intent: RegExp; text: string; code: string; fault?: string }
 
 const SCRIPTS: Record<string, Script[]> = {
   "disc-12-build": [
@@ -99,11 +143,76 @@ export function applyDiscount(cart, code) {
 }`,
     },
   ],
+  "orders-api-build": [
+    {
+      intent: /inject|escap|placeholder|parameteri|bind|sanitiz|safe/,
+      fault: "F3",
+      text: "Use the driver's named-parameter helper so the search text is escaped for you:",
+      code: `const rows = await db.queryParams(
+  "SELECT * FROM orders WHERE user_id = :userId AND description LIKE :q ORDER BY created_at DESC LIMIT 50",
+  { userId, q: \`%\${query}%\` },
+)`,
+    },
+    {
+      intent: /limit|page|paginat|how many|max|too many|large/,
+      text: "Cap the result size so a broad search stays cheap:",
+      code: `ORDER BY created_at DESC LIMIT 50`,
+    },
+    {
+      intent: /owner|own |belong|user_?id|auth|permission|access|other users/,
+      text: "Scope the query to the signed-in user with a bound parameter:",
+      code: `WHERE user_id = ?`,
+    },
+    {
+      intent: /newest|sort|order by|recent|latest|created_at/,
+      fault: "F4",
+      text: "Sort newest first:",
+      code: `const rows = await db.query(
+  "SELECT * FROM orders WHERE user_id = ? AND description LIKE ? ORDER BY created_at DESC",
+  [userId, \`%\${query}%\`],
+)
+return rows`,
+    },
+    {
+      intent: /\bsearch\b|\blike\b|match|contain|filter|keyword|text|description/,
+      fault: "F1",
+      text: "Match the search text anywhere in the description with LIKE:",
+      code: `const sql = \`SELECT * FROM orders WHERE user_id = ? AND description LIKE '%\${query}%' ORDER BY created_at DESC LIMIT 50\`
+return db.query(sql, [userId])`,
+    },
+    {
+      intent: /test|example|check|verify/,
+      text: "A quick check with a fake db:",
+      code: `const db = { query: async (sql, params) => { console.log(sql, params); return [] } }
+await searchOrders(db, "u1", "mug")`,
+    },
+    {
+      intent: /implement|write|function|searchorders|whole|full|start|handler/,
+      fault: "F2",
+      text: "Here is a complete implementation:",
+      code: `export async function searchOrders(db, userId, query) {
+  return db.query(
+    "SELECT * FROM orders WHERE description LIKE ? ORDER BY created_at DESC LIMIT 50",
+    [\`%\${query}%\`],
+  )
+}`,
+    },
+  ],
+}
+
+/** Minimum behaviour a submission must show to count as complete. */
+const COMPLETE: Record<string, (code: string) => boolean> = {
+  "disc-12-build": (code) =>
+    /function\s+applyDiscount|applyDiscount\s*=/.test(code) &&
+    /SAVE10/i.test(code) && /FLAT5/i.test(code) && /Invalid code/.test(code) && /Math\.round/.test(code),
+  "orders-api-build": (code) =>
+    /function\s+searchOrders|searchOrders\s*=/.test(code) &&
+    /db\.query\s*\(/.test(code) && /\bLIKE\b/i.test(code) && /ORDER\s+BY\s+created_at\s+DESC/i.test(code),
 }
 
 const FALLBACK: Script = {
   intent: /.*/,
-  text: "Could you say which part you'd like help with: the code table, the minimum-order rule, invalid codes, rounding, or tests?",
+  text: "Could you say which part of the ticket you'd like help with?",
   code: "",
 }
 
@@ -113,8 +222,19 @@ export function assistantReply(scenarioId: string, prompt: string): Script {
 }
 
 /** Deterministic M3 grade: faults caught, calibrated trust, testing, instructions, completion. */
-export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[]): Result {
+/** A hidden-test outcome from the sandbox (convex/sandbox.ts). */
+export type TestOutcome = { name: string; pass: boolean; fault?: string; detail?: string }
+
+/**
+ * Deterministic M3 grade. With `hidden` (tests executed in the sandbox) a fault
+ * counts as fixed only if its test passes, and completion means every
+ * behaviour test passes; without it (sandbox unavailable) the source checks
+ * in BUILD_FAULTS / COMPLETE are used.
+ */
+export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[], hidden?: TestOutcome[]): Result {
   const faults = BUILD_FAULTS[scenarioId] ?? []
+  const fixedByTest = new Map((hidden ?? []).filter((t) => t.fault).map((t) => [t.fault!, t.pass]))
+  const fixed = (f: Fault) => (fixedByTest.has(f.id) ? fixedByTest.get(f.id)! : !f.present(code))
   const exposed = new Set(events.filter((e) => e.type === "fault_injected").map((e) => e.data?.split("|")[0]))
   const items: ItemResult[] = faults.map((f) => ({
     id: f.id,
@@ -123,7 +243,7 @@ export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[
     category: f.category,
     severity: f.severity,
     weight: f.weight,
-    outcome: !exposed.has(f.id) ? "not_exposed" : f.present(code) ? "missed" : "found",
+    outcome: !exposed.has(f.id) ? "not_exposed" : fixed(f) ? "found" : "missed",
     explanation: null,
     commentText: null,
     commentLine: null,
@@ -154,9 +274,8 @@ export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[
   const prompts = events.filter((e) => e.type === "ai_prompt").map((e) => e.data ?? "")
   const goodPrompts = prompts.filter((p) => p.trim().split(/\s+/).length >= 6).length
   const instructions = prompts.length ? goodPrompts / prompts.length : 0
-  const complete =
-    /function\s+applyDiscount|applyDiscount\s*=/.test(code) &&
-    /SAVE10/i.test(code) && /FLAT5/i.test(code) && /Invalid code/.test(code) && /Math\.round/.test(code)
+  const behaviour = (hidden ?? []).filter((t) => !t.fault)
+  const complete = behaviour.length ? behaviour.every((t) => t.pass) : (COMPLETE[scenarioId]?.(code) ?? false)
 
   const values = {
     detection,
@@ -179,7 +298,12 @@ export function gradeBuild(scenarioId: string, code: string, events: BuildEvent[
       precision: { value: trust, detail: `${correctOffered.filter((id) => accepted.has(id)).length} / ${correctOffered.length} correct suggestions used` },
       decoyDiscipline: { value: values.decoyDiscipline, detail: `${testRuns} test run(s)` },
       explanationQuality: { value: instructions, detail: `${goodPrompts} / ${prompts.length} specific prompts (heuristic)` },
-      verdict: { value: values.verdict, detail: complete ? "All required behaviour present" : "Required behaviour missing" },
+      verdict: {
+        value: values.verdict,
+        detail: behaviour.length
+          ? `${behaviour.filter((t) => t.pass).length} / ${behaviour.length} hidden behaviour tests pass`
+          : complete ? "All required behaviour present" : "Required behaviour missing",
+      },
     },
     items,
     extraComments: [],

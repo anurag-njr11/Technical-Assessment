@@ -22,6 +22,71 @@ export const WEIGHTS = {
 } as const
 export type Weights = { [K in keyof typeof WEIGHTS]: number }
 
+export const DIMENSIONS = {
+  issueDetection: "Issue detection",
+  engineeringJudgment: "Technical/engineering judgment",
+  reasoning: "Reasoning & evidence-seeking",
+  trustCalibration: "AI trust calibration",
+  promptQuality: "Prompt quality",
+  interactionQuality: "AI interaction quality",
+  verification: "Verification/validation",
+  efficiency: "Token usage & efficiency",
+  challengeAssumptions: "Challenging incorrect AI assumptions",
+}
+export type DimKey = keyof typeof DIMENSIONS
+type Trajectory = NonNullable<Result["trajectory"]>
+export type Signal = NonNullable<Trajectory["dimensions"][number]["signals"]>[number]
+
+/** Dimension score = round(100 * mean(signal values)); dimensions without signals are left out. */
+export function dimensionsFrom(signals: Partial<Record<DimKey, Signal[]>>, notes: Partial<Record<DimKey, string>> = {}): Trajectory["dimensions"] {
+  return (Object.keys(DIMENSIONS) as DimKey[])
+    .filter((key) => signals[key]?.length)
+    .map((key) => {
+      const s = signals[key]!
+      return {
+        key, label: DIMENSIONS[key],
+        score: Math.round((100 * s.reduce((t, x) => t + x.value, 0)) / s.length),
+        detail: [notes[key], ...s.map((x) => `${x.label}: ${Math.round(100 * x.value)}%`)].filter(Boolean).join("; "),
+        ...(notes[key] ? { note: notes[key] } : {}),
+        signals: s,
+      }
+    })
+}
+
+/**
+ * Re-scores trajectory dimensions after human overrides: deterministic signals follow the
+ * (possibly overridden) components, overridden findings count the human's decision.
+ * ponytail: the efficiency signal is not recomputed when a challenge finding flips; it keeps the machine count.
+ */
+export function rescoreTrajectory(t: Trajectory, components: Result["components"], human: Map<string, boolean>): Trajectory {
+  const findings = t.findings.map((f) => {
+    const d = human.get(f.id)
+    if (d === undefined) return f
+    const kind = f.dimension === "challengeAssumptions" && f.good ? (d ? ("detected" as const) : ("missed" as const)) : f.kind
+    return { ...f, kind, humanDecision: d, overridden: true, needsReview: false }
+  })
+  // Results graded before signals were stored keep their dimension scores.
+  if (t.dimensions.some((d) => !d.signals)) return { ...t, findings }
+  const comp = components as Record<string, { value: number }>
+  const sig: Partial<Record<DimKey, Signal[]>> = {}
+  const notes: Partial<Record<DimKey, string>> = {}
+  for (const d of t.dimensions) {
+    sig[d.key as DimKey] = d.signals!.map((s) => (s.component && comp[s.component] ? { ...s, value: comp[s.component].value } : { ...s }))
+    if (d.note) notes[d.key as DimKey] = d.note
+  }
+  for (const f of findings) {
+    if (f.humanDecision === undefined || f.good === undefined) continue
+    for (const dim of [f.dimension, ...(f.also ?? [])] as DimKey[]) {
+      const list = (sig[dim] ??= [])
+      const value = f.humanDecision === f.good ? 1 : 0
+      const i = list.findIndex((s) => s.finding === f.id)
+      if (i >= 0) list[i] = { ...list[i], value }
+      else list.push({ label: f.good ? f.title : (f.goodTitle ?? `Avoided: ${f.title}`), value, finding: f.id })
+    }
+  }
+  return { dimensions: dimensionsFrom(sig, notes), findings }
+}
+
 export function band(score: number): string {
   if (score >= 80) return "Strong"
   if (score >= 60) return "Meets bar"
@@ -106,6 +171,8 @@ export function computeScore(input: ScoreInput) {
 export type Override =
   | { target: "item"; targetId: string; after: string; afterExplanation?: number | null; commentId?: string }
   | { target: "comment"; targetId: string; after: string }
+  // Trajectory finding: after = "yes" | "no", the human's answer to the finding's question.
+  | { target: "finding"; targetId: string; after: string }
 
 export function extraClassToCommentClass(c: ExtraComment["classification"]): CommentClass {
   if (c === "valid_extra" || c === "matched") return "valid"
@@ -118,6 +185,12 @@ export function extraClassToCommentClass(c: ExtraComment["classification"]): Com
  * Applies overrides (oldest first; later ones win) to a machine result and
  * recomputes the score. Pure: the same inputs always give the same output.
  */
+/** Half the deterministic grade, half the mean of the judged trajectory dimensions (except issueDetection). */
+export function blendOverall(base: number, dimensions?: Array<{ key: string; score: number }>): number {
+  const others = (dimensions ?? []).filter((d) => d.key !== "issueDetection")
+  return others.length ? Math.round(0.5 * base + (0.5 * others.reduce((s, d) => s + d.score, 0)) / others.length) : base
+}
+
 export function applyOverrides(
   machine: Result,
   overrides: Override[],
@@ -125,12 +198,15 @@ export function applyOverrides(
     comments: Array<{ id: string; file: string; line: number; text: string }>
     verdict: string
     expectedVerdict: string
+    /** M3 Directed Build: the score comes from gradeBuild's components, not computeScore. */
+    build?: boolean
   },
 ): Result {
   if (overrides.length === 0) return machine
   const items = machine.items.map((i) => ({ ...i }))
   const extras = machine.extraComments.map((e) => ({ ...e }))
   const classes = new Map((machine.commentClasses ?? []).map((c) => [c.commentId, c.cls]))
+  const human = new Map<string, boolean>()
 
   for (const o of overrides) {
     if (o.target === "item") {
@@ -148,6 +224,8 @@ export function applyOverrides(
           item.commentLine = c.line
         }
       }
+    } else if (o.target === "finding") {
+      human.set(o.targetId, o.after === "yes")
     } else {
       const extra = extras.find((e) => e.commentId === o.targetId)
       if (extra) {
@@ -158,23 +236,46 @@ export function applyOverrides(
     }
   }
 
-  const score = computeScore({
-    items,
-    commentClasses: [...classes.values()],
-    commentCount: ctx.comments.length,
-    verdict: ctx.verdict,
-    expectedVerdict: ctx.expectedVerdict,
-    weights: machine.weights,
-  })
+  const score = ctx.build
+    ? buildScore(machine, items)
+    : computeScore({
+        items,
+        commentClasses: [...classes.values()],
+        commentCount: ctx.comments.length,
+        verdict: ctx.verdict,
+        expectedVerdict: ctx.expectedVerdict,
+        weights: machine.weights,
+      })
+  const trajectory = machine.trajectory ? rescoreTrajectory(machine.trajectory, score.components, human) : undefined
+  // Judged runs blend in the trajectory; if every judge failed there are no valid votes and it stays deterministic.
+  const judged = machine.trajectory?.findings.some((f) => f.votes.some((v) => v.valid))
+  const overall = judged ? blendOverall(score.overall, trajectory?.dimensions) : score.overall
   return {
     ...machine,
     ...score,
+    ...(trajectory ? { trajectory } : {}),
+    overall,
+    band: band(overall),
     items,
     extraComments: extras,
     commentClasses: [...classes.entries()].map(([commentId, cls]) => ({ commentId, cls })),
     machine: { overall: machine.overall, band: machine.band },
     overrideCount: overrides.length,
   }
+}
+
+/** Directed Build: only the detection component depends on item outcomes (exposed faults fixed). */
+function buildScore(machine: Result, items: ItemResult[]) {
+  const exposed = items.filter((i) => i.kind === "issue" && i.outcome !== "not_exposed")
+  const total = exposed.reduce((s, i) => s + i.weight, 0)
+  const caught = exposed.filter((i) => i.outcome === "found").reduce((s, i) => s + i.weight, 0)
+  const components = {
+    ...machine.components,
+    detection: { value: total ? caught / total : 1, detail: total ? `${caught} / ${total} pts of exposed faults fixed` : "No faults exposed" },
+  }
+  const values = Object.fromEntries(Object.entries(components).map(([k, c]) => [k, c.value])) as Record<keyof typeof WEIGHTS, number>
+  const overall = overallFrom(values, machine.weights)
+  return { overall, band: band(overall), components, foundCount: exposed.filter((i) => i.outcome === "found").length }
 }
 
 // ---------------------------------------------------------------------------

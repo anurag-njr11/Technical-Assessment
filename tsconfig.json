@@ -18,20 +18,8 @@
     "incremental": true,
     "noEmit": true,
 
-    /* Disable all strict checks */
-    "strict": false,
-    "noImplicitAny": false,
-    "noImplicitThis": false,
-    "strictPropertyInitialization": false,
-    "noImplicitReturns": false,
-    "noFallthroughCasesInSwitch": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": false,
-
-    /* Enable only critical checks that prevent build errors */
-    "strictFunctionTypes": true,
-    "strictNullChecks": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true
   }
 }

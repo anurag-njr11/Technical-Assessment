@@ -3,7 +3,7 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { AuthLoading, Authenticated, Unauthenticated, useMutation, useQuery } from 'convex/react'
 import { Loader2, LogOut, ShieldCheck } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { TopBar } from '@/components/rb'
+import { Page, PageSpinner, RecruiterNav, cleanError } from '@/components/rb'
 
 /**
  * Wraps every recruiter-only page. Candidates never see this: they take the
@@ -36,10 +36,72 @@ export function SignOutButton() {
   return (
     <button
       onClick={() => void signOut()}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+      aria-label="Sign out"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
-      <LogOut className="size-3.5" /> Sign out
+      <LogOut className="size-3.5" /> <span className="hidden sm:inline">Sign out</span>
     </button>
+  )
+}
+
+/** Frame for every signed-in recruiter page: recruiter nav, extra actions, sign out. */
+export function RecruiterPage({
+  right,
+  loading,
+  children,
+}: {
+  right?: React.ReactNode
+  loading?: boolean
+  children?: React.ReactNode
+}) {
+  return (
+    <Page nav={<RecruiterNav />} right={<>{right}<WorkspaceBadge /><SignOutButton /></>}>
+      <DemoBanner />
+      {loading ? <PageSpinner /> : children}
+    </Page>
+  )
+}
+
+/** True for read-only demo visitors: pages hide actions they can't take. */
+export function useReadOnly() {
+  const me = useQuery(api.access.me)
+  return !!(me?.signedIn && me.role === 'viewer')
+}
+
+/** Demo viewers: what they're looking at, and the assessments they can take themselves. */
+function DemoBanner() {
+  const me = useQuery(api.access.me)
+  const viewer = me?.signedIn && me.role === 'viewer'
+  const assessments = useQuery(api.assessments.list, viewer ? {} : 'skip')
+  if (!viewer) return null
+  return (
+    <div className="mb-6 rounded-xl border border-primary/25 bg-accent/60 p-4 text-sm">
+      <p className="font-semibold">You're exploring a demo workspace with sample candidates.</p>
+      <p className="mt-1 text-muted-foreground">
+        Every report here was produced by the real grading pipeline. Try it as a candidate: open an assessment in a new tab,
+        submit, and your report appears in this dashboard about a minute later.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(assessments ?? []).map((a) => (
+          <a key={a._id} href={`/a/${a.token}`} target="_blank" rel="noreferrer" className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-muted">
+            Take: {a.title.split(' · ').slice(1).join(' · ') || a.title}
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Which company's workspace you're in; demo visitors see that it is read-only. */
+function WorkspaceBadge() {
+  const me = useQuery(api.access.me)
+  const ws = me?.signedIn ? me.workspace : null
+  if (!ws) return null
+  return (
+    <span className="hidden max-w-72 items-center gap-1.5 truncate rounded-lg border border-border px-2.5 py-1.5 text-sm text-muted-foreground md:inline-flex" title={`Workspace: ${ws.name}`}>
+      <span className="truncate font-medium text-foreground">{ws.name}</span>
+      {me?.signedIn && me.role === 'viewer' ? <span className="rounded bg-accent px-1.5 text-[11px] font-semibold text-accent-foreground">Demo · read-only</span> : null}
+    </span>
   )
 }
 
@@ -53,19 +115,19 @@ function FullPageSpinner() {
 
 function Shell({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar subtitle="Hiring team" right={right} />
-      <main className="mx-auto flex max-w-md flex-col px-6 py-16">{children}</main>
-    </div>
+    <Page subtitle="Hiring team" right={right} width="form" className="sm:py-20">
+      {children}
+    </Page>
   )
 }
 
 function Membership({ children }: { children: React.ReactNode }) {
   const me = useQuery(api.access.me)
-  const claim = useMutation(api.access.claimWorkspace)
+  const create = useMutation(api.access.createWorkspace)
   const accept = useMutation(api.access.acceptInvite)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [name, setName] = useState('')
 
   if (me === undefined) return <FullPageSpinner />
   if (!me.signedIn) return <FullPageSpinner />
@@ -77,7 +139,7 @@ function Membership({ children }: { children: React.ReactNode }) {
     try {
       await fn()
     } catch (err) {
-      setError(err instanceof Error ? err.message.replace(/^.*Uncaught Error: /, '').split('\n')[0] : 'Something went wrong.')
+      setError(cleanError(err))
     } finally {
       setBusy(false)
     }
@@ -86,35 +148,36 @@ function Membership({ children }: { children: React.ReactNode }) {
   return (
     <Shell right={<SignOutButton />}>
       <Card>
-        <div className="grid size-10 place-items-center rounded-md border border-border">
+        <div className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
           <ShieldCheck className="size-5" />
         </div>
-        {!me.workspaceClaimed ? (
-          <>
-            <h1 className="mt-4 text-xl font-semibold">Set up your workspace</h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              No one has claimed this ReviewBench workspace yet. Claim it to become the owner. You'll be able to invite
-              teammates by email.
-            </p>
-            <PrimaryButton busy={busy} onClick={() => run(() => claim({}))}>
-              Claim workspace as {me.email}
-            </PrimaryButton>
-          </>
-        ) : me.invited ? (
+        {me.invited ? (
           <>
             <h1 className="mt-4 text-xl font-semibold">You've been invited</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {me.email} was invited to this hiring team.
+              {me.email} was invited to {me.invitedTo[0] ?? 'a hiring team'}.
             </p>
             <PrimaryButton busy={busy} onClick={() => run(() => accept({}))}>
-              Join the team
+              Join {me.invitedTo[0] ?? 'the team'}
             </PrimaryButton>
           </>
+        ) : me.canCreate ? (
+          <form onSubmit={(e) => { e.preventDefault(); void run(() => create({ name })) }}>
+            <h1 className="mt-4 text-xl font-semibold">Create your hiring workspace</h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Your company's private space for assessments, candidates and reports. You'll be its owner and can invite
+              teammates by email.
+            </p>
+            <div className="mt-4">
+              <Field label="Company or team name" name="workspace" value={name} onChange={(v) => { setName(v); setError('') }} placeholder="Acme Engineering" />
+            </div>
+            <PrimaryButton type="submit" busy={busy}>Create workspace</PrimaryButton>
+          </form>
         ) : (
           <>
             <h1 className="mt-4 text-xl font-semibold">No access yet</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {me.email} isn't on this hiring team. Ask the workspace owner to invite this email address, then refresh
+              {me.email} isn't on a hiring team yet. Ask your workspace owner to invite this email address, then refresh
               this page.
             </p>
           </>
@@ -126,7 +189,7 @@ function Membership({ children }: { children: React.ReactNode }) {
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl border border-border bg-card p-7">{children}</div>
+  return <div className="rounded-2xl border border-border bg-card p-7 shadow-[0_12px_40px_-24px_hsl(var(--foreground)/0.35)] sm:p-8">{children}</div>
 }
 
 function PrimaryButton({
@@ -145,7 +208,7 @@ function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={busy}
-      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-60"
     >
       {busy ? <Loader2 className="size-4 animate-spin" /> : null}
       {children}
@@ -183,7 +246,7 @@ function Field({
         value={value}
         onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         placeholder={placeholder}
-        className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+        className="mt-1.5 w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm outline-none transition-shadow focus:border-ring focus:ring-3 focus:ring-ring/15"
       />
     </label>
   )
@@ -207,6 +270,7 @@ function friendly(err: unknown, fallback: string): string {
 
 function SignInForms() {
   const { signIn } = useAuthActions()
+  const options = useQuery(api.access.signInOptions)
   const [step, setStep] = useState<Step>('signIn')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -348,7 +412,8 @@ function SignInForms() {
 
   return (
     <Card>
-      <h1 className="text-xl font-semibold">{step === 'signIn' ? 'Sign in to your hiring workspace' : 'Create your account'}</h1>
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Hiring team</p>
+      <h1 className="mt-2 text-xl font-semibold tracking-tight">{step === 'signIn' ? 'Sign in to your hiring workspace' : 'Create your account'}</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Results and answer keys are only visible to your hiring team. Candidates don't need an account.
       </p>
@@ -358,8 +423,16 @@ function SignInForms() {
         {err}
         <PrimaryButton type="submit" busy={busy}>{step === 'signIn' ? 'Sign in' : 'Create account'}</PrimaryButton>
       </form>
+      {options?.google ? (
+        <button
+          onClick={() => void signIn('google', { redirectTo: '/recruiter' }).catch((e) => setError(friendly(e, 'Google sign-in failed.')))}
+          className="mt-3 w-full rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-semibold hover:bg-accent"
+        >
+          Continue with Google
+        </button>
+      ) : null}
       <div className="mt-4 flex flex-wrap justify-between gap-2 text-sm">
-        <button onClick={() => reset(step === 'signIn' ? 'signUp' : 'signIn')} className="font-medium hover:underline">
+        <button onClick={() => reset(step === 'signIn' ? 'signUp' : 'signIn')} className="font-medium text-primary hover:underline">
           {step === 'signIn' ? 'Create an account' : 'Have an account? Sign in'}
         </button>
         {step === 'signIn' ? (

@@ -37,9 +37,35 @@ export type ScenarioMeta = {
   followUps: string[]
   /** TR-4: the answer key may be shown to candidates only once a scenario is retired. */
   retired?: boolean
+  /** §7.4: pins the agent/assistant model for this scenario version (else ASSISTANT_MODEL). Bump `version` when changing it. */
+  agentModel?: string
 }
 
 export const SCENARIO_META: Record<string, ScenarioMeta> = {
+  "sub-118-mid": {
+    kind: "code",
+    title: "SUB-118 · Subscription cancellation (Code Review, Mid)",
+    version: 1,
+    level: "Mid",
+    minutes: 35,
+    followUps: [
+      "Which problem in this PR could cost the company money or trust soonest, and why?",
+      "How would you test that cancelling is safe to retry and refunds the right amount for monthly and yearly plans?",
+      "What single instruction would you give the AI agent to fix the most serious problem?",
+    ],
+  },
+  "inv-311-senior": {
+    kind: "code",
+    title: "INV-311 · Stock reservation (Code Review, Senior)",
+    version: 1,
+    level: "Senior",
+    minutes: 45,
+    followUps: [
+      "Two customers start checkout for the last unit at the same moment. Walk through what this code does, and what you would change.",
+      "How would you test that reservations never oversell under concurrent requests?",
+      "What single instruction would you give the AI agent to fix the most serious problem?",
+    ],
+  },
   "ord-482-junior": {
     kind: "code",
     title: "ORD-482 · Pagination & date filtering (Code Review, Junior)",
@@ -76,12 +102,32 @@ export const SCENARIO_META: Record<string, ScenarioMeta> = {
       "What would you recommend instead, and what would you check first?",
     ],
   },
+  "adr-044-senior": {
+    kind: "decision",
+    title: "ADR-044 · Event bus between Checkout and Fulfillment (Decision Review, Senior)",
+    version: 1,
+    level: "Senior",
+    minutes: 25,
+    followUps: [
+      "Which claims or assumptions in the recommendation are flawed, and why?",
+      "Which constraints, costs or risks does it ignore?",
+      "What would you recommend instead, and what would you check first?",
+    ],
+  },
   "disc-12-build": {
     kind: "build",
     title: "DISC-12 · Discount codes (Directed Build pilot)",
     version: 1,
     level: "All levels",
     minutes: 30,
+    followUps: [],
+  },
+  "orders-api-build": {
+    kind: "build",
+    title: "ORD-519 · Order search (Directed Build, Mid)",
+    version: 1,
+    level: "Mid",
+    minutes: 35,
     followUps: [],
   },
 }
@@ -93,10 +139,177 @@ export const BATTERIES: Record<string, { name: string; scenarioIds: string[] }> 
   "ai-collaboration": { name: "AI collaboration (Directed Build + Code Review)", scenarioIds: ["disc-12-build", "ord-482-junior"] },
 }
 
+/**
+ * Server-only: which of the agent's stated assumptions (src/lib/scenario.ts,
+ * same index order) are wrong, and the answer-key item each one hides.
+ * A test keeps the lengths in sync.
+ */
+export const ASSUMPTION_KEYS: Record<string, Array<{ flawed: boolean; itemId: string }>> = {
+  "ord-482-junior": [
+    { flawed: true, itemId: "I1" },
+    { flawed: true, itemId: "I2" },
+    { flawed: true, itemId: "I3" },
+    { flawed: true, itemId: "I4" },
+    { flawed: false, itemId: "D1" },
+  ],
+  "adr-031-mid": [
+    { flawed: true, itemId: "F1" },
+    { flawed: true, itemId: "F2" },
+    { flawed: true, itemId: "F3" },
+    { flawed: true, itemId: "F4" },
+    { flawed: true, itemId: "F5" },
+    { flawed: false, itemId: "D1" },
+    { flawed: false, itemId: "D2" },
+  ],
+  "adr-044-senior": [
+    { flawed: true, itemId: "F1" },
+    { flawed: true, itemId: "F2" },
+    { flawed: true, itemId: "F3" },
+    { flawed: true, itemId: "F4" },
+    { flawed: true, itemId: "F5" },
+    { flawed: false, itemId: "D1" },
+    { flawed: false, itemId: "D2" },
+  ],
+  "inv-311-senior": [
+    { flawed: true, itemId: "I1" },
+    { flawed: true, itemId: "I2" },
+    { flawed: true, itemId: "I3" },
+    { flawed: true, itemId: "I4" },
+    { flawed: true, itemId: "I5" },
+    { flawed: true, itemId: "I6" },
+    { flawed: false, itemId: "D1" },
+    { flawed: false, itemId: "D2" },
+  ],
+  "sub-118-mid": [
+    { flawed: true, itemId: "I3" },
+    { flawed: true, itemId: "I1" },
+    { flawed: true, itemId: "I2" },
+    { flawed: true, itemId: "I4" },
+    { flawed: true, itemId: "I5" },
+    { flawed: true, itemId: "I6" },
+    { flawed: false, itemId: "D1" },
+  ],
+  "pay-217-mid": [
+    { flawed: true, itemId: "I3" },
+    { flawed: true, itemId: "I1" },
+    { flawed: true, itemId: "I5" },
+    { flawed: true, itemId: "I2" },
+    { flawed: true, itemId: "I4" },
+    { flawed: true, itemId: "I6" },
+    { flawed: false, itemId: "D1" },
+  ],
+}
+
 /** M2 answer-key items all refer to the single combined critique. */
 const DECISION_FILE = "decision.md"
 
+const INV = "src/inventory/reserve.ts"
+
+const SUB = "billing/subscriptions.py"
+
 export const ANSWER_KEYS: Record<string, AnswerKey> = {
+  "sub-118-mid": {
+    scenarioId: "sub-118-mid",
+    expectedVerdict: "request_changes",
+    items: [
+      {
+        id: "I1", kind: "issue", title: "No check that the caller owns the subscription", category: "Security", severity: "critical", weight: 4,
+        file: SUB, lineStart: 12, lineEnd: 13,
+        description: "require_auth only identifies the customer. Any signed-in customer can cancel (and trigger refunds on) anyone's subscription by ID.",
+        acceptableFix: "Return 404 unless sub.customer_id == g.customer.id (load the subscription scoped to the caller).",
+      },
+      {
+        id: "I2", kind: "issue", title: "Refund math assumes every period is 30 days", category: "Correctness", severity: "high", weight: 3,
+        file: SUB, lineStart: 15, lineEnd: 16,
+        description: "price_cents is per billing period. For a yearly plan price * days_left / 30 refunds roughly 12x too much, more than the customer paid; after period_end days_left is negative.",
+        acceptableFix: "Prorate by the real period length (month or year) using remaining time / period length, clamp at 0, and cap at the amount charged.",
+      },
+      {
+        id: "I3", kind: "issue", title: "Calls billing.refund_prorated(), which does not exist", category: "Hallucination", severity: "high", weight: 3,
+        file: SUB, lineStart: 20, lineEnd: 20,
+        description: "BillingClient only has create_refund(charge_id, amount_cents) and cancel(). Every cancellation crashes with AttributeError.",
+        acceptableFix: "billing.create_refund(sub.last_charge_id, refund).",
+      },
+      {
+        id: "I4", kind: "issue", title: "Never cancels at the billing provider, so the customer keeps being charged", category: "Correctness", severity: "high", weight: 3,
+        file: SUB, lineStart: 19, lineEnd: 21,
+        description: "Only our database row changes. billing.cancel(provider_subscription_id) is never called, so the provider charges the customer again next period.",
+        acceptableFix: "Call billing.cancel(sub.provider_subscription_id) (and handle failures) before reporting success.",
+      },
+      {
+        id: "I5", kind: "issue", title: "Logs the customer's email and free-text reason", category: "Security", severity: "medium", weight: 2,
+        file: SUB, lineStart: 22, lineEnd: 22,
+        description: "Email and the cancellation reason are personal data; the ticket says they must never appear in logs.",
+        acceptableFix: "Log the subscription id only (and a reason category if needed).",
+      },
+      {
+        id: "I6", kind: "issue", title: "Double submit can refund twice", category: "Edge cases", severity: "medium", weight: 2,
+        file: SUB, lineStart: 17, lineEnd: 21,
+        description: "Two concurrent requests both read status 'active' before either commits, so both issue a refund. The status check is not atomic.",
+        acceptableFix: "Lock the row (SELECT ... FOR UPDATE) or update with WHERE status = 'active' and only refund when a row changed; or use an idempotency key with the provider.",
+      },
+      {
+        id: "D1", kind: "decoy", title: "Already-canceled returns 200 with the subscription (required by the ticket)", category: "Decoy", severity: "none", weight: 0,
+        file: SUB, lineStart: 17, lineEnd: 18,
+        description: "The ticket requires cancelling to be idempotent: a repeated cancel returns 200 with the subscription. Correct as written.",
+        acceptableFix: "No change needed.",
+      },
+    ],
+  },
+  "inv-311-senior": {
+    scenarioId: "inv-311-senior",
+    expectedVerdict: "request_changes",
+    items: [
+      {
+        id: "I1", kind: "issue", title: "Read-then-write race oversells stock", category: "Concurrency", severity: "critical", weight: 4,
+        file: INV, lineStart: 11, lineEnd: 15,
+        description: "Two concurrent requests can both read available = 1, both pass the check and both write 0, reserving the same unit twice. Nothing serialises the read and the write.",
+        acceptableFix: "A single atomic UPDATE stock SET available = available - $1 WHERE sku = $2 AND available >= $1 RETURNING available (409 when no row), or SELECT ... FOR UPDATE inside a transaction.",
+      },
+      {
+        id: "I2", kind: "issue", title: "No transaction: a later out-of-stock item leaves earlier items reserved", category: "Correctness", severity: "high", weight: 3,
+        file: INV, lineStart: 10, lineEnd: 17,
+        description: "Items are decremented one by one with separate queries. If item 3 is out of stock, items 1 and 2 stay decremented and reserved, breaking 'all or none' and leaking stock until expiry.",
+        acceptableFix: "Run every reservation in one transaction (BEGIN/COMMIT on a single client from pool.connect()) and roll back on any failure.",
+      },
+      {
+        id: "I3", kind: "issue", title: "Calls redis.invalidate(), which does not exist", category: "Hallucination", severity: "high", weight: 3,
+        file: INV, lineStart: 18, lineEnd: 18,
+        description: "The cache wrapper only exposes get, set and del. Every successful reservation throws after the stock was written, returning 500 and leaving the product-page cache stale.",
+        acceptableFix: "Call redis.del(stockKey(sku)) for each SKU (after the transaction commits).",
+      },
+      {
+        id: "I4", kind: "issue", title: "No check that the cart belongs to the caller", category: "Security", severity: "high", weight: 3,
+        file: INV, lineStart: 8, lineEnd: 9,
+        description: "requireUser only authenticates. Any signed-in user can reserve (and so block) stock on someone else's cart ID.",
+        acceptableFix: "Load the cart and return 404 unless carts.user_id = req.user.id, ideally inside the same transaction.",
+      },
+      {
+        id: "I5", kind: "issue", title: "qty is not validated (negative quantities add stock)", category: "Security", severity: "high", weight: 3,
+        file: INV, lineStart: 9, lineEnd: 15,
+        description: "A negative or fractional qty passes the check and available - qty increases stock; a malicious client can inflate inventory.",
+        acceptableFix: "Validate items is a non-empty array of { sku: string, qty: positive integer } and return 400 otherwise.",
+      },
+      {
+        id: "I6", kind: "issue", title: "Unknown SKU crashes with a TypeError", category: "Edge cases", severity: "medium", weight: 2,
+        file: INV, lineStart: 11, lineEnd: 12,
+        description: "rows[0] is undefined when the SKU doesn't exist, so rows[0].available throws and the request fails with 500 instead of a clear 4xx.",
+        acceptableFix: "Treat a missing row as unknown SKU (400/404) or as out of stock (409).",
+      },
+      {
+        id: "D1", kind: "decoy", title: "15-minute reservation expiry (required by the ticket)", category: "Decoy", severity: "none", weight: 0,
+        file: INV, lineStart: 16, lineEnd: 16,
+        description: "The ticket asks for a 15-minute hold and an existing job releases expired reservations. This is correct.",
+        acceptableFix: "No change needed.",
+      },
+      {
+        id: "D2", kind: "decoy", title: "409 with the SKU for out-of-stock items (required by the ticket)", category: "Decoy", severity: "none", weight: 0,
+        file: INV, lineStart: 13, lineEnd: 13,
+        description: "Returning 409 Conflict with the SKU is exactly what the ticket specifies.",
+        acceptableFix: "No change needed.",
+      },
+    ],
+  },
   "ord-482-junior": {
     scenarioId: "ord-482-junior",
     expectedVerdict: "request_changes",
@@ -220,6 +433,54 @@ export const ANSWER_KEYS: Record<string, AnswerKey> = {
         id: "D1", kind: "decoy", title: "Returning the existing refund for a repeated Idempotency-Key (required by the ticket)", category: "Decoy", severity: "none", weight: 0,
         file: "payments/refunds.py", lineStart: 18, lineEnd: 21,
         description: "The ticket requires repeated requests with the same Idempotency-Key to return the original refund. Returning it with 200 is correct.",
+        acceptableFix: "No change needed.",
+      },
+    ],
+  },
+  "adr-044-senior": {
+    scenarioId: "adr-044-senior",
+    expectedVerdict: "request_changes",
+    items: [
+      {
+        id: "F1", kind: "issue", title: "Dual write: an order can be saved without its event", category: "Correctness", severity: "critical", weight: 4,
+        file: DECISION_FILE, lineStart: 1, lineEnd: 1,
+        description: "Saving to Postgres and then publishing to Kafka are two separate writes. A crash, deploy or broker error between them loses the event and the order is never fulfilled.",
+        acceptableFix: "Transactional outbox: write the event to an outbox table in the same transaction as the order and relay it to the queue (or use CDC).",
+      },
+      {
+        id: "F2", kind: "issue", title: "Misreads Kafka's exactly-once guarantee", category: "Hallucination", severity: "high", weight: 3,
+        file: DECISION_FILE, lineStart: 1, lineEnd: 1,
+        description: "Exactly-once semantics cover reads and writes inside Kafka transactions, not side effects such as calling the warehouse API. Consumers still see redeliveries after rebalances and retries.",
+        acceptableFix: "Make Fulfillment idempotent: dedupe by order_id (unique constraint or processed-events table).",
+      },
+      {
+        id: "F3", kind: "issue", title: "Partitioning by order_id breaks per-warehouse ordering", category: "Correctness", severity: "high", weight: 3,
+        file: DECISION_FILE, lineStart: 1, lineEnd: 1,
+        description: "Ordering is only guaranteed within a partition. Spreading one warehouse's orders across partitions means they can be processed out of order, which the context forbids.",
+        acceptableFix: "Partition by warehouse_id (or another key that groups orders that must stay in order).",
+      },
+      {
+        id: "F4", kind: "issue", title: "Puts card data in events, outside the Payments service", category: "Security", severity: "high", weight: 3,
+        file: DECISION_FILE, lineStart: 1, lineEnd: 1,
+        description: "Payment details in OrderPlaced copy card data into the bus, every consumer and every retained log segment, expanding PCI scope against an explicit constraint.",
+        acceptableFix: "Carry only a payment reference or status; consumers that need more call Payments.",
+      },
+      {
+        id: "F5", kind: "issue", title: "Ignores the cost of running Kafka with no experience", category: "Performance", severity: "high", weight: 3,
+        file: DECISION_FILE, lineStart: 1, lineEnd: 1,
+        description: "A self-hosted 3-broker cluster needs on-call, upgrades, monitoring and capacity planning; nobody on a team of six has run it, and the budget is $1,000 a month. 400 orders a minute doesn't need it.",
+        acceptableFix: "Use something the team can operate: an outbox polled into a managed queue (SQS, Cloud Pub/Sub) or Postgres-backed queue; revisit Kafka if volume demands it.",
+      },
+      {
+        id: "D1", kind: "decoy", title: "Dead-letter topic after 5 failed attempts", category: "Decoy", severity: "none", weight: 0,
+        file: DECISION_FILE, lineStart: 1, lineEnd: 1,
+        description: "A dead-letter queue with bounded retries is standard practice and stops a poison message blocking a partition.",
+        acceptableFix: "No change needed.",
+      },
+      {
+        id: "D2", kind: "decoy", title: "Checkout returns once the order is saved", category: "Decoy", severity: "none", weight: 0,
+        file: DECISION_FILE, lineStart: 1, lineEnd: 1,
+        description: "Taking Fulfillment off the synchronous path is exactly what fixes the incidents in the context.",
         acceptableFix: "No change needed.",
       },
     ],

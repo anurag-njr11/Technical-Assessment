@@ -10,16 +10,19 @@ import type { Doc, Id } from "./_generated/dataModel"
 import { internal } from "./_generated/api"
 import { commentValidator, resultValidator, verdictValidator } from "./schema"
 import { ANSWER_KEYS, SCENARIO_META } from "./answerKey"
-import { requireOwner, requireRecruiter } from "./access"
+import { mine, own, requireMember, requireOwner, requireRecruiter } from "./access"
 import { requireActive } from "./candidates"
 import { LIMITS, hit } from "./rateLimit"
 import { applyOverrides } from "./scoring"
+import { PAUSED } from "./judges"
+import { slim } from "./dashboard"
 import type { Override, Result } from "./scoring"
 
 // FR-C-18 server limits.
 export const MAX_COMMENTS = 40
 export const MAX_TEXT = 4000
 export const MAX_ANSWERS = 10
+const DEMO_SUBMITS_PER_HOUR = 20
 
 type CommentIn = { id: string; file: string; line: number; severity: string; text: string }
 
@@ -68,6 +71,7 @@ export async function insertSubmission(
       ? decisionComment(meta.followUps, work.answers)
       : work.comments
   const id = await ctx.db.insert("submissions", {
+    workspaceId: candidate.workspaceId,
     candidateName: candidate.name,
     candidateId: candidate._id,
     scenarioId: candidate.scenarioId,
@@ -103,7 +107,10 @@ export const submit = mutation({
   },
   handler: async (ctx, args) => {
     const candidate = await requireActive(ctx, args.token)
-    await hit(ctx, "submit:global", LIMITS.submitsPerHour())
+    // Per workspace, so one company's traffic can't exhaust another's judge budget.
+    // The public demo gets a smaller share of the free-tier quota.
+    const ws = candidate.workspaceId ? await ctx.db.get(candidate.workspaceId) : null
+    await hit(ctx, `submit:${candidate.workspaceId ?? "global"}`, ws?.demo ? DEMO_SUBMITS_PER_HOUR : LIMITS.submitsPerHour())
     const meta = SCENARIO_META[candidate.scenarioId]
     if (meta.kind === "build") {
       const code = args.code ?? ""
@@ -135,6 +142,8 @@ export const submit = mutation({
       comments: locked ? draft.comments : args.comments,
       answers: args.answers,
       autoSubmitted: false,
+      // PR-author chat on code reviews.
+      build: draft?.events?.length ? { code: "", events: draft.events } : undefined,
     })
     return null
   },
@@ -145,10 +154,10 @@ export const submit = mutation({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
     const rows = await ctx.db
       .query("submissions")
-      .withIndex("by_submittedAt")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId))
       .order("desc")
       .take(100)
     return rows.map((r) => ({
@@ -167,6 +176,7 @@ export const list = query({
       reviewResolved: r.humanReview?.status === "resolved",
       kind: SCENARIO_META[r.scenarioId]?.kind ?? "code",
       appealOpen: r.appeal?.status === "open",
+      paused: r.status === "error" && r.error === PAUSED,
       released: !!r.released,
     }))
   },
@@ -175,43 +185,67 @@ export const list = query({
 export const get = query({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
+    const me = await requireMember(ctx)
     const id = ctx.db.normalizeId("submissions", args.id)
     if (!id) return null
-    return await ctx.db.get(id)
+    return mine(me, await ctx.db.get(id))
   },
 })
 
 export const regrade = mutation({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const row = await ctx.db.get(args.id)
-    if (!row) throw new Error("Submission not found.")
+    const me = await requireRecruiter(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
     await ctx.db.patch(args.id, { status: "grading", error: undefined })
     await ctx.scheduler.runAfter(0, internal.grading.grade, { submissionId: args.id })
   },
 })
 
+/** Budget guard: re-queue every submission paused for exhausted AI credits. */
+export const retryPaused = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const me = await requireRecruiter(ctx)
+    const rows = await ctx.db.query("submissions").withIndex("by_workspace", (q) => q.eq("workspaceId", me.workspaceId)).order("desc").take(500)
+    const paused = rows.filter((r) => r.status === "error" && r.error === PAUSED)
+    for (const [i, r] of paused.entries()) {
+      await ctx.db.patch(r._id, { status: "grading", error: undefined })
+      // Spread out so one top-up isn't drained by a burst.
+      await ctx.scheduler.runAfter(i * 5000, internal.grading.grade, { submissionId: r._id })
+    }
+    return paused.length
+  },
+})
+
+/** Deletes a submission and everything derived from it: reviews, labels, traces, outcomes, candidate, draft. */
+export async function deleteSubmission(ctx: MutationCtx, id: Id<"submissions">) {
+  const row = await ctx.db.get(id)
+  if (!row) return
+  for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes", "metricRows", "shadowResults"] as const) {
+    const rows = await ctx.db
+      .query(table)
+      .withIndex("by_submission", (q) => q.eq("submissionId", id))
+      .collect()
+    for (const r of rows) await ctx.db.delete(r._id)
+  }
+  if (row.candidateId) await deleteCandidate(ctx, row.candidateId)
+  await ctx.db.delete(id)
+}
+
+export async function deleteCandidate(ctx: MutationCtx, id: Id<"candidates">) {
+  const drafts = await ctx.db.query("autosaves").withIndex("by_candidate", (q) => q.eq("candidateId", id)).collect()
+  for (const d of drafts) await ctx.db.delete(d._id)
+  if (await ctx.db.get(id)) await ctx.db.delete(id)
+}
+
 /** Owner-only: permanently deletes a submission and everything derived from it (SEC-17). */
 export const remove = mutation({
   args: { id: v.id("submissions") },
   handler: async (ctx, args) => {
-    await requireOwner(ctx)
-    const row = await ctx.db.get(args.id)
-    if (!row) return
-    for (const table of ["reviews", "goldenLabels", "judgeCalls", "outcomes"] as const) {
-      const rows = await ctx.db
-        .query(table)
-        .withIndex("by_submission", (q) => q.eq("submissionId", args.id))
-        .collect()
-      for (const r of rows) await ctx.db.delete(r._id)
-    }
-    if (row.candidateId) {
-      const c = await ctx.db.get(row.candidateId)
-      if (c) await ctx.db.delete(c._id)
-    }
-    await ctx.db.delete(args.id)
+    const me = await requireOwner(ctx)
+    own(me, await ctx.db.get(args.id), "Submission not found.")
+    await deleteSubmission(ctx, args.id)
   },
 })
 
@@ -219,9 +253,9 @@ export const remove = mutation({
 export const setReleased = mutation({
   args: { id: v.id("submissions"), released: v.boolean() },
   handler: async (ctx, args) => {
-    await requireRecruiter(ctx)
-    const row = await ctx.db.get(args.id)
-    if (!row || row.status !== "graded") throw new Error("Only graded submissions can be shared.")
+    const me = await requireRecruiter(ctx)
+    const row = own(me, await ctx.db.get(args.id), "Submission not found.")
+    if (row.status !== "graded") throw new Error("Only graded submissions can be shared.")
     await ctx.db.patch(args.id, { released: args.released })
   },
 })
@@ -246,7 +280,7 @@ export async function loadOverrides(ctx: { db: MutationCtx["db"] }, id: Id<"subm
     .map((r) =>
       r.target === "item"
         ? { target: "item" as const, targetId: r.targetId, after: r.after, afterExplanation: r.afterExplanation, commentId: r.commentId }
-        : { target: "comment" as const, targetId: r.targetId, after: r.after },
+        : { target: r.target, targetId: r.targetId, after: r.after },
     )
 }
 
@@ -258,7 +292,19 @@ export function effectiveResult(sub: Doc<"submissions">, machine: Result, overri
     verdict: sub.verdict,
     // M3 builds have no answer key; their "verdict" slot is task completion.
     expectedVerdict: key?.expectedVerdict ?? "none",
+    build: SCENARIO_META[sub.scenarioId]?.kind === "build",
   })
+}
+
+/** REL-8: upserts the dashboard's slim copy of a graded submission's machine result. Returns true when added. */
+export async function writeMetricRow(ctx: MutationCtx, s: Doc<"submissions">): Promise<boolean> {
+  const machine = s.machineResult ?? s.result
+  if (!machine) return false
+  const row = { workspaceId: s.workspaceId, submissionId: s._id, scenarioId: s.scenarioId, submittedAt: s.submittedAt, machine: slim(machine) }
+  const existing = await ctx.db.query("metricRows").withIndex("by_submission", (q) => q.eq("submissionId", s._id)).unique()
+  if (existing) await ctx.db.replace(existing._id, row)
+  else await ctx.db.insert("metricRows", row)
+  return !existing
 }
 
 export const saveResult = internalMutation({
@@ -274,6 +320,12 @@ export const saveResult = internalMutation({
       result: effectiveResult(sub, args.result, overrides),
       error: undefined,
     })
+    await writeMetricRow(ctx, { ...sub, machineResult: args.result })
+    // EX-3: shadow-grade answer-key modules with the candidate panel; it never changes the live result.
+    if (process.env.SHADOW_PANEL_JSON && ANSWER_KEYS[sub.scenarioId]) {
+      await ctx.scheduler.runAfter(0, internal.reliability.shadow, { submissionId: args.id })
+    }
+    if (process.env.WEBHOOK_URL) await ctx.scheduler.runAfter(0, internal.webhooks.graded, { submissionId: args.id })
   },
 })
 

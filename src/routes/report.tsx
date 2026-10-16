@@ -6,8 +6,9 @@ import { MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
 import { interviewQuestions } from '@/lib/interview'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { BandChip, OutcomeChip, RecruiterNav, SeverityChip, TopBar, cleanError } from '@/components/rb'
-import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { BandChip, OutcomeChip, SeverityChip, cleanError } from '@/components/rb'
+import { RecruiterGate, RecruiterPage, useReadOnly } from '@/components/recruiter-gate'
+import { AgentPR, EvidenceReport, Timeline, type TrajectoryResult } from '@/components/evidence'
 import { cn } from '@/lib/utils'
 import siteMetadata from '@/metadata.json'
 
@@ -82,35 +83,21 @@ function Report() {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const sub = useQuery(api.submissions.get, id ? { id } : 'skip')
+  const readOnly = useReadOnly()
   const regrade = useMutation(api.submissions.regrade)
 
-  const back = (
-    <>
-      <RecruiterNav />
-      <button onClick={() => window.print()} className="hidden items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground sm:inline-flex print:hidden">
-        <Printer className="size-4" /> PDF
-      </button>
-      <Link to="/recruiter" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Candidates
-      </Link>
-      <SignOutButton />
-    </>
+  const pdf = (
+    <button onClick={() => window.print()} className="hidden items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex print:hidden">
+      <Printer className="size-4" /> PDF
+    </button>
   )
 
-  if (!mounted || (id && sub === undefined)) {
-    return (
-      <div className="min-h-screen bg-background">
-        <TopBar right={back} />
-        <div className="grid place-items-center py-24"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
-      </div>
-    )
-  }
+  if (!mounted || (id && sub === undefined)) return <RecruiterPage loading />
   if (!id || !sub) {
     return (
-      <div className="min-h-screen bg-background">
-        <TopBar right={back} />
+      <RecruiterPage>
         <p className="py-24 text-center text-muted-foreground">Report not found.</p>
-      </div>
+      </RecruiterPage>
     )
   }
 
@@ -130,26 +117,36 @@ function Report() {
         callCount?: number
         reviewReasons: string[]
         judges: Array<{ name: string; model: string }>
-        followUpQuality?: { value: number; detail: string; answers: Array<{ question: string; score: number; votes: number }> }
+        followUpQuality?: {
+          value: number
+          detail: string
+          answers: Array<{ question: string; score: number; votes: number; checks?: Array<{ label: string; passed: boolean; yes: number }> }>
+        }
         communication?: { value: number; detail: string }
         configNote?: string
+        trajectory?: TrajectoryResult
+        tests?: Array<{ name: string; pass: boolean; fault?: string; detail?: string }>
       }
     | undefined
-  const kind = SCENARIOS[sub.scenarioId]?.kind ?? 'code'
+  const scenario = SCENARIOS[sub.scenarioId] as (typeof SCENARIOS)[string] | undefined
+  const kind = scenario?.kind ?? 'code'
   const labels = COMPONENT_LABELS[kind]
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar subtitle="Candidate report" right={back} />
-      <main className="mx-auto grid max-w-7xl gap-6 px-6 py-8 xl:grid-cols-[1fr_320px]">
+    <RecruiterPage right={pdf}>
+      <Link to="/recruiter" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground print:hidden">
+        <ArrowLeft className="size-4" /> Candidates
+      </Link>
+      <div className="mt-4 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
-          <section className="flex flex-wrap items-center gap-6 rounded-xl border border-border bg-card p-6">
-            <div className="grid size-12 place-items-center rounded-full bg-muted text-sm font-semibold">
+          <section className="flex flex-wrap items-center gap-5 rounded-xl border border-border bg-card p-6 shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]">
+            <div className="grid size-12 shrink-0 place-items-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">
               {sub.candidateName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-lg font-semibold">{sub.candidateName}</h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Candidate report</p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight">{sub.candidateName}</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 {MODULE_LABEL[kind]} · {SCENARIOS[sub.scenarioId]?.ticketId ?? sub.scenarioId} · {sub.level} · {new Date(sub.submittedAt).toLocaleString()} · Verdict:{' '}
                 {sub.verdict === 'approve' ? 'Approve' : sub.verdict === 'none' ? 'None' : 'Request changes'}
                 {sub.autoSubmitted ? ' · Auto-submitted at the time limit' : ''}
@@ -157,7 +154,7 @@ function Report() {
             </div>
             {sub.status === 'graded' && result ? (
               <div className="flex items-center gap-4">
-                <div className="text-center">
+                <div className="rounded-xl border border-border bg-muted/40 px-4 py-2.5 text-center">
                   <div className="font-mono text-3xl font-semibold leading-none">{result.overall}</div>
                   <div className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{result.band}</div>
                 </div>
@@ -192,6 +189,18 @@ function Report() {
 
           {result ? (
             <>
+              {scenario && scenario.kind !== 'build' && scenario.assumptions?.length ? <AgentPR scenario={scenario} findings={result.trajectory?.findings ?? []} /> : null}
+              {result.trajectory ? (
+                <EvidenceReport
+                  trajectory={result.trajectory}
+                  overall={result.overall}
+                  band={result.band}
+                  baseScore={Math.round(100 * Object.entries(result.components).reduce((t, [k, c]) => t + (result.weights[k] ?? 0) * c.value, 0))}
+                  code={sub.build?.code}
+                  events={sub.build?.events}
+                  submissionId={sub._id}
+                />
+              ) : null}
               {result.machine ? (
                 <section className="rounded-xl border border-border bg-card p-4 text-sm">
                   <span className="font-semibold">Adjusted by human review.</span>{' '}
@@ -212,7 +221,7 @@ function Report() {
               ) : null}
 
               <section className="rounded-xl border border-border bg-card p-6">
-                <h2 className="text-sm font-semibold">Score breakdown</h2>
+                <h2 className="text-[15px] font-semibold tracking-tight">Score breakdown</h2>
                 <div className="mt-4 space-y-4">
                   {Object.entries(result.components).map(([key, c]) => (
                     <div key={key}>
@@ -225,7 +234,7 @@ function Report() {
                       </div>
                       <div className="mt-1.5 h-2 rounded-full bg-muted">
                         <div
-                          className={cn('h-full rounded-full', c.value < 0.34 ? 'bg-destructive' : 'bg-primary')}
+                          className={cn('h-full rounded-full transition-[width] duration-700', c.value < 0.34 ? 'bg-destructive' : 'bg-primary')}
                           style={{ width: `${Math.max(2, Math.round(c.value * 100))}%` }}
                         />
                       </div>
@@ -234,9 +243,11 @@ function Report() {
                 </div>
               </section>
 
+              {result.tests?.length ? <HiddenTests tests={result.tests} /> : null}
+
               {result.followUpQuality || result.communication || result.configNote ? (
                 <section className="rounded-xl border border-border bg-card p-6 text-sm">
-                  <h2 className="font-semibold">Also measured (not yet in the score)</h2>
+                  <h2 className="text-[15px] font-semibold tracking-tight">Also measured (not yet in the score)</h2>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
                     {result.communication ? (
                       <div><dt className="text-muted-foreground">Communication (SCR-2)</dt><dd><span className="font-mono">{Math.round(result.communication.value * 100)}%</span> · {result.communication.detail}</dd></div>
@@ -253,14 +264,14 @@ function Report() {
                 <h2 className="px-6 pt-5 text-sm font-semibold">{ITEMS_TITLE[kind]}</h2>
                 <div className="mt-3 divide-y divide-border">
                   {result.items.map((item) => (
-                    <ItemRow key={item.id} item={item} submissionId={sub._id} comments={sub.comments} />
+                    <ItemRow key={item.id} item={item} submissionId={sub._id} comments={sub.comments} build={kind === 'build'} />
                   ))}
                 </div>
               </section>
 
               {result.extraComments.length > 0 ? (
                 <section className="rounded-xl border border-border bg-card p-6">
-                  <h2 className="text-sm font-semibold">Other comments</h2>
+                  <h2 className="text-[15px] font-semibold tracking-tight">Other comments</h2>
                   <div className="mt-3 space-y-3">
                     {result.extraComments.map((e, i) => (
                       <div key={i} className="rounded-lg border border-border p-3">
@@ -279,7 +290,7 @@ function Report() {
                   </div>
                 </section>
               ) : null}
-              {sub.build ? <Trajectory code={sub.build.code} events={sub.build.events} /> : null}
+              {sub.build && !result.trajectory ? <Timeline code={sub.build.code} events={sub.build.events} /> : null}
               <InterviewGuide items={result.items} kind={kind} />
               {sub.appeal ? (
                 <section className="rounded-xl border border-warning/30 bg-warning-soft p-5 text-sm">
@@ -296,15 +307,16 @@ function Report() {
         <aside className="space-y-5">
           {result ? <SharePanel submissionId={sub._id} released={!!sub.released} token={null} /> : null}
           {result ? <InsightsPanel submissionId={sub._id} /> : null}
-          {result && kind !== 'build' ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
-          {result && kind !== 'build' ? <EvalPanel submissionId={sub._id} result={result} /> : null}
+          {result && kind !== 'build' && !readOnly ? <GoldenPanel submissionId={sub._id} items={result.items} /> : null}
+          {result && kind !== 'build' && !readOnly ? <EvalPanel submissionId={sub._id} result={result} /> : null}
           {sub.followUps.length ? <section className="rounded-xl border border-border bg-card p-5">
-            <h2 className="text-sm font-semibold">{kind === 'decision' ? 'Critique' : 'Follow-up answers'}</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">{kind === 'decision' ? 'Critique' : 'Follow-up answers'}</h2>
             <div className="mt-3 space-y-4">
               {sub.followUps.map((f, i) => (
                 <div key={i}>
                   <p className="text-xs font-semibold text-muted-foreground">{f.question}</p>
                   <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{f.answer || '—'}</p>
+                  <FollowUpChecks a={result?.followUpQuality?.answers.find((a) => a.question === f.question)} />
                 </div>
               ))}
             </div>
@@ -319,7 +331,7 @@ function Report() {
 
           {result ? (
             <section className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-sm font-semibold">Judge panel</h2>
+              <h2 className="text-[15px] font-semibold tracking-tight">Judge panel</h2>
               <ul className="mt-3 space-y-2 text-sm">
                 {result.judges.map((j) => (
                   <li key={j.name} className="flex justify-between gap-3">
@@ -346,19 +358,19 @@ function Report() {
           ) : null}
 
           <section className="rounded-xl border border-border bg-card p-5">
-            <h2 className="text-sm font-semibold">Overall</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight">Overall</h2>
             <div className="mt-3">
               <BandChip band={result?.band} score={result?.overall} />
             </div>
           </section>
-          <DeletePanel submissionId={sub._id} />
+          {readOnly ? null : <DeletePanel submissionId={sub._id} />}
         </aside>
-      </main>
-    </div>
+      </div>
+    </RecruiterPage>
   )
 }
 
-function ItemRow({ item, submissionId, comments }: { item: ItemT; submissionId: string; comments: SubComment[] }) {
+function ItemRow({ item, submissionId, comments, build }: { item: ItemT; submissionId: string; comments: SubComment[]; build: boolean }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const discarded = item.votes.filter((v) => !v.valid).length
@@ -391,12 +403,14 @@ function ItemRow({ item, submissionId, comments }: { item: ItemT; submissionId: 
             {open ? 'Hide judge votes' : 'Show judge votes'}
           </button>
         ) : null}
-        <button onClick={() => setEditing((o) => !o)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
-          {editing ? 'Cancel override' : 'Override outcome'}
-        </button>
+        {item.outcome !== 'not_exposed' ? (
+          <button onClick={() => setEditing((o) => !o)} className="text-xs font-semibold text-muted-foreground hover:text-foreground">
+            {editing ? 'Cancel override' : 'Override outcome'}
+          </button>
+        ) : null}
       </div>
       {open ? <Votes votes={item.votes} mode={item.kind} /> : null}
-      {editing ? <OverrideForm item={item} submissionId={submissionId} comments={comments} onDone={() => setEditing(false)} /> : null}
+      {editing ? <OverrideForm item={item} submissionId={submissionId} comments={comments} build={build} onDone={() => setEditing(false)} /> : null}
     </div>
   )
 }
@@ -432,9 +446,9 @@ function Votes({ votes, mode }: { votes: VoteT[]; mode: 'issue' | 'decoy' | 'cla
 // ---------------------------------------------------------------------------
 
 const inputCls = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30'
-const btnCls = 'rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60'
+const btnCls = 'rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60'
 
-function OverrideForm({ item, submissionId, comments, onDone }: { item: ItemT; submissionId: string; comments: SubComment[]; onDone: () => void }) {
+function OverrideForm({ item, submissionId, comments, build, onDone }: { item: ItemT; submissionId: string; comments: SubComment[]; build: boolean; onDone: () => void }) {
   const override = useMutation(api.reviews.overrideItem)
   const options = item.kind === 'issue' ? (['found', 'missed'] as const) : (['clean', 'false_alarm'] as const)
   const [outcome, setOutcome] = useState<string>(item.outcome)
@@ -451,8 +465,8 @@ function OverrideForm({ item, submissionId, comments, onDone }: { item: ItemT; s
         submissionId: submissionId as Id<'submissions'>,
         itemId: item.id,
         outcome: outcome as 'found' | 'missed' | 'clean' | 'false_alarm',
-        explanation: outcome === 'found' ? Number(explanation) : undefined,
-        commentId: commentId || undefined,
+        explanation: outcome === 'found' && !build ? Number(explanation) : undefined,
+        commentId: build ? undefined : commentId || undefined,
         justification,
       })
       onDone()
@@ -468,17 +482,19 @@ function OverrideForm({ item, submissionId, comments, onDone }: { item: ItemT; s
         <select value={outcome} onChange={(e) => setOutcome(e.target.value)} aria-label="Outcome" className={inputCls}>
           {options.map((o) => <option key={o} value={o}>{o.replace('_', ' ')}</option>)}
         </select>
-        {item.kind === 'issue' && outcome === 'found' ? (
+        {item.kind === 'issue' && outcome === 'found' && !build ? (
           <select value={explanation} onChange={(e) => setExplanation(e.target.value)} aria-label="Explanation score" className={inputCls}>
             <option value="0">Explanation 0 (neither)</option>
             <option value="1">Explanation 1 (impact or fix)</option>
             <option value="2">Explanation 2 (impact and fix)</option>
           </select>
         ) : <span />}
-        <select value={commentId} onChange={(e) => setCommentId(e.target.value)} aria-label="Supporting comment" className={inputCls}>
-          <option value="">Keep linked comment</option>
-          {comments.map((c) => <option key={c.id} value={c.id}>{c.file}:{c.line} · {c.text.slice(0, 40)}</option>)}
-        </select>
+        {build ? null : (
+          <select value={commentId} onChange={(e) => setCommentId(e.target.value)} aria-label="Supporting comment" className={inputCls}>
+            <option value="">Keep linked comment</option>
+            {comments.map((c) => <option key={c.id} value={c.id}>{c.file}:{c.line} · {c.text.slice(0, 40)}</option>)}
+          </select>
+        )}
       </div>
       <textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Why? (required, recorded in the audit log)" aria-label="Justification" className={inputCls} />
       {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
@@ -536,9 +552,9 @@ function HumanReview({ submissionId, needsReview, resolved }: { submissionId: st
   if (!needsReview && history.length === 0 && !resolved) return null
   return (
     <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Human review</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Human review</h2>
       {history.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">No overrides yet. Use “Override outcome” on any item, or “Reclassify” on other comments.</p>
+        <p className="mt-2 text-sm text-muted-foreground">No overrides yet. Use “Override outcome” on any item, “Override” on an AI finding, or “Reclassify” on other comments.</p>
       ) : (
         <ul className="mt-3 space-y-2 text-sm">
           {history.map((h) => (
@@ -612,7 +628,7 @@ function GoldenPanel({ submissionId, items }: { submissionId: string; items: Ite
   }
   return (
     <section className="rounded-xl border border-border bg-card p-5">
-      <h2 className="text-sm font-semibold">Golden set</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Golden set</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         Grade this review yourself, without looking at the judges, to measure council accuracy.{' '}
         {mine ? `${mine.graders.length} grader(s) so far.` : ''}
@@ -674,7 +690,7 @@ function EvalPanel({ submissionId, result }: { submissionId: string; result: { c
   const tokens = calls?.reduce((s, c) => s + c.estTokens, 0) ?? 0
   return (
     <section className="rounded-xl border border-border bg-card p-5">
-      <h2 className="text-sm font-semibold">Evaluation</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Evaluation</h2>
       {calls ? (
         <p className="mt-1 text-xs text-muted-foreground">
           {calls.length} traced judge calls{failed ? `, ${failed} failed over` : ''} · ~{tokens.toLocaleString()} tokens
@@ -732,44 +748,11 @@ function InterviewGuide({ items, kind }: { items: ItemT[]; kind: string }) {
   if (!qs.length) return null
   return (
     <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Suggested interview questions</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Suggested interview questions</h2>
       <p className="mt-1 text-xs text-muted-foreground">Generated from this candidate's gaps and strengths. Structured questions, asked of every candidate with the same gap, are the most predictive.</p>
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
         {qs.map((q) => <li key={q.q}><span>{q.q}</span> <span className="text-xs text-muted-foreground">({q.why})</span></li>)}
       </ol>
-    </section>
-  )
-}
-
-function Trajectory({ code, events }: { code: string; events: Array<{ id: string; t: number; type: string; data?: string }> }) {
-  const label: Record<string, string> = {
-    ai_prompt: 'Asked', ai_response: 'Assistant', fault_injected: 'Planted fault', accept_suggestion: 'Accepted', reject_suggestion: 'Dismissed', test_run: 'Ran tests', file_open: 'Opened',
-  }
-  const show = (e: { type: string; data?: string }) => {
-    if (e.type === 'ai_response') {
-      try {
-        return (JSON.parse(e.data ?? '{}') as { text?: string }).text ?? ''
-      } catch {
-        return e.data ?? ''
-      }
-    }
-    if (e.type === 'fault_injected') return (e.data ?? '').split('|')[0]
-    return e.data ?? ''
-  }
-  return (
-    <section className="rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Trajectory ({events.length} events)</h2>
-      <ol className="mt-3 max-h-80 space-y-1.5 overflow-y-auto text-sm">
-        {events.map((e) => (
-          <li key={e.id} className="flex gap-3">
-            <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{Math.floor(e.t / 60000)}:{String(Math.floor((e.t % 60000) / 1000)).padStart(2, '0')}</span>
-            <span className={cn('w-24 shrink-0 text-xs font-semibold', e.type === 'fault_injected' ? 'text-destructive' : '')}>{label[e.type] ?? e.type}</span>
-            <span className="min-w-0 truncate text-muted-foreground">{show(e)}</span>
-          </li>
-        ))}
-      </ol>
-      <h3 className="mt-5 text-sm font-semibold">Final code</h3>
-      <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted p-3 font-mono text-xs">{code}</pre>
     </section>
   )
 }
@@ -779,7 +762,7 @@ function SharePanel({ submissionId, released }: { submissionId: string; released
   const [error, setError] = useState('')
   return (
     <section className="rounded-xl border border-border bg-card p-5 print:hidden">
-      <h2 className="text-sm font-semibold">Candidate feedback</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Candidate feedback</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         {released
           ? 'The candidate can see a summary (score, components, strengths and gaps by category) on their results page. Planted issues stay private.'
@@ -805,7 +788,7 @@ function InsightsPanel({ submissionId }: { submissionId: string }) {
     setOutcome({ id: submissionId as Id<'submissions'>, hired, rating }).catch((err) => setError(cleanError(err)))
   return (
     <section className="rounded-xl border border-border bg-card p-5 text-sm">
-      <h2 className="font-semibold">Context</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight">Context</h2>
       <dl className="mt-2 space-y-1.5">
         <div className="flex justify-between gap-3">
           <dt className="text-muted-foreground">vs your engineers</dt>
@@ -848,3 +831,53 @@ function InsightsPanel({ submissionId }: { submissionId: string }) {
     </section>
   )
 }
+
+/** M3: hidden tests that ran against the final code in the QuickJS sandbox. */
+function HiddenTests({ tests }: { tests: Array<{ name: string; pass: boolean; fault?: string; detail?: string }> }) {
+  const passed = tests.filter((t) => t.pass).length
+  return (
+    <section className="rounded-xl border border-border bg-card p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-[15px] font-semibold tracking-tight">Hidden tests</h2>
+        <span className="font-mono text-sm">{passed} / {tests.length} passed</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Run against the submitted code in a sandbox (QuickJS in WebAssembly, no network or secrets). A planted fault counts as fixed only if its test passes.
+      </p>
+      <ul className="mt-3 divide-y divide-border text-sm">
+        {tests.map((t) => (
+          <li key={t.name} className="flex flex-wrap items-start gap-2 py-2">
+            <span className={cn('rounded px-1.5 font-mono text-xs font-semibold', t.pass ? 'bg-success-soft text-success' : 'bg-destructive-soft text-destructive')}>{t.pass ? 'PASS' : 'FAIL'}</span>
+            <span className="min-w-0 flex-1">
+              {t.name}
+              {t.fault ? <span className="ml-1.5 text-xs text-muted-foreground">· planted fault {t.fault}</span> : null}
+              {t.detail && !t.pass ? <span className="block text-xs text-muted-foreground">{t.detail}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+/** SCR-1: how the judge council scored one follow-up answer, check by check. */
+function FollowUpChecks({ a }: { a?: { score: number; votes: number; checks?: Array<{ label: string; passed: boolean; yes: number }> } }) {
+  if (!a) return null
+  if (!a.checks) return <p className="mt-1.5 text-xs text-muted-foreground">Judges: {a.score}/3 checks passed</p>
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {a.checks.map((c) => (
+        <span
+          key={c.label}
+          title={`${c.yes} of ${a.votes} judges said yes`}
+          className={cn(
+            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold',
+            c.passed ? 'border-success/30 bg-success-soft text-success' : 'border-destructive/30 bg-destructive-soft text-destructive',
+          )}
+        >
+          {c.passed ? '✓' : '✗'} {c.label} <span className="font-normal opacity-80">{c.yes}/{a.votes}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+

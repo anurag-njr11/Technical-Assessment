@@ -4,9 +4,12 @@ import { useMutation, useQuery } from 'convex/react'
 import { AlertTriangle, Check, Copy, Download, Loader2, X } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { BandChip, RecruiterNav, TopBar, cleanError } from '@/components/rb'
-import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS } from '@/lib/scenario'
-import { RecruiterGate, SignOutButton } from '@/components/recruiter-gate'
+import { BandChip, PageHeader, Panel, btn, cleanError } from '@/components/rb'
+import { BATTERY_OPTIONS, MODULE_LABEL, SCENARIOS, variantsOf } from '@/lib/scenario'
+import { RecruiterGate, RecruiterPage, useReadOnly } from '@/components/recruiter-gate'
+import { cn } from '@/lib/utils'
+import { downloadCsv } from '@/lib/csv'
+import { AssessmentLink } from '@/components/assessment-link'
 import siteMetadata from '@/metadata.json'
 
 const meta = siteMetadata['/recruiter']
@@ -25,9 +28,14 @@ export const Route = createFileRoute('/recruiter')({
 type StatusFilter = 'all' | 'grading' | 'graded' | 'review' | 'error'
 
 function Recruiter() {
+  const readOnly = useReadOnly()
   const rows = useQuery(api.submissions.list)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
+  const [level, setLevel] = useState('')
+  const [since, setSince] = useState('')
+  const retryPaused = useMutation(api.submissions.retryPaused)
+  const paused = rows?.filter((r) => r.paused).length ?? 0
   const completed = rows?.filter((r) => r.status === 'graded').length ?? 0
   const flagged = rows?.filter((r) => r.needsReview && !r.reviewResolved).length ?? 0
   // FR-R-5: filter by status and search by candidate name.
@@ -35,49 +43,64 @@ function Recruiter() {
     () =>
       rows?.filter((r) => {
         if (search && !r.candidateName.toLowerCase().includes(search.trim().toLowerCase())) return false
+        if (level && r.level !== level) return false
+        if (since && r.submittedAt < new Date(since).getTime()) return false
         if (status === 'review') return !!r.needsReview && !r.reviewResolved
         if (status !== 'all') return r.status === status
         return true
       }),
-    [rows, search, status],
+    [rows, search, status, level, since],
   )
 
   return (
-    <div className="min-h-screen bg-background">
-      <TopBar
-        subtitle="Recruiter dashboard"
-        right={
-          <>
-            <RecruiterNav />
-            <SignOutButton />
-          </>
-        }
+    <RecruiterPage>
+      <PageHeader
+        eyebrow="Recruiter dashboard"
+        title="Assessments"
+        description="Create an assessment, share its link or QR code, then open each candidate's evidence-backed report."
       />
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Candidates</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Code Review, Decision Review and Directed Build assessments</p>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Stat label="Submitted" value={rows?.length ?? 0} />
-          <Stat label="Graded" value={completed} />
-          <Stat label="Awaiting human review" value={flagged} tone={flagged ? 'danger' : undefined} />
+      {paused ? (
+        <div role="alert" className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive-soft px-5 py-4 text-sm">
+          <AlertTriangle className="size-4 text-destructive" />
+          <span className="font-semibold text-destructive">Grading paused: AI credits exhausted.</span>
+          <span className="text-muted-foreground">{paused} submission{paused === 1 ? '' : 's'} waiting. Top up the provider account, then retry.</span>
+          <button onClick={() => void retryPaused({})} className={cn(btn.secondary, 'ml-auto')}>Retry all</button>
         </div>
+      ) : null}
 
-        <InvitePanel />
+      <div className="rb-stagger mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat label="Submitted" value={rows?.length ?? 0} />
+        <Stat label="Graded" value={completed} />
+        <Stat label="Awaiting human review" value={flagged} tone={flagged ? 'danger' : undefined} />
+      </div>
 
-        <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:items-center">
+      <AssessmentsPanel />
+
+      <Panel
+        flush
+        className="mt-8"
+        title="All submissions"
+        description="Every attempt across your assessments."
+        actions={
+          <button onClick={() => rows && exportDashboard(rows)} disabled={!rows?.length} className={btn.secondary}>
+            <Download className="size-4" /> Export CSV
+          </button>
+        }
+      >
+        <div className="mt-4 flex flex-col gap-2 border-y border-border bg-muted/40 px-5 py-3 sm:flex-row sm:items-center sm:px-6">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search candidates"
             aria-label="Search candidates"
-            className="rounded-md border border-input bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 sm:w-64"
+            className={cn(fieldCls, 'sm:w-72')}
           />
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as StatusFilter)}
             aria-label="Filter by status"
-            className="rounded-md border border-input bg-card px-3 py-2 text-sm"
+            className={cn(fieldCls, 'sm:w-44')}
           >
             <option value="all">All statuses</option>
             <option value="grading">Grading</option>
@@ -85,20 +108,19 @@ function Recruiter() {
             <option value="review">Needs review</option>
             <option value="error">Error</option>
           </select>
-          <button
-            onClick={() => rows && downloadCsv(rows)}
-            disabled={!rows?.length}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium disabled:opacity-50 sm:ml-auto"
-          >
-            <Download className="size-4" /> Export CSV
-          </button>
+          <select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Filter by level" className={cn(fieldCls, 'sm:w-36')}>
+            <option value="">All levels</option>
+            {LEVELS.map((l) => <option key={l}>{l}</option>)}
+          </select>
+          <input type="date" value={since} onChange={(e) => setSince(e.target.value)} aria-label="Submitted since" className={cn(fieldCls, 'sm:w-44')} />
+          {visible ? <span className="text-xs text-muted-foreground sm:ml-auto">{visible.length} shown</span> : null}
         </div>
 
-        <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                <th className="px-5 py-3 font-semibold">Candidate</th>
+                <th className="px-6 py-3 font-semibold">Candidate</th>
                 <th className="px-5 py-3 font-semibold">Module</th>
                 <th className="px-5 py-3 font-semibold">Score</th>
                 <th className="px-5 py-3 font-semibold">Issues found</th>
@@ -116,14 +138,14 @@ function Recruiter() {
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">
-                    {rows && rows.length > 0 ? 'No submissions match these filters.' : 'No submissions yet. Invite a candidate above to get started.'}
+                    {rows && rows.length > 0 ? 'No submissions match these filters.' : 'No submissions yet. Create an assessment above and share its link.'}
                   </td>
                 </tr>
               ) : (
                 visible.map((r) => (
-                  <tr key={r._id} className="border-b border-border last:border-0 hover:bg-accent/50">
-                    <td className="px-5 py-4">
-                      <Link to="/report" search={{ id: r._id }} className="font-semibold hover:underline">
+                  <tr key={r._id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
+                    <td className="px-6 py-4">
+                      <Link to="/report" search={{ id: r._id }} className="font-semibold hover:text-primary hover:underline">
                         {r.candidateName}
                       </Link>
                     </td>
@@ -162,10 +184,197 @@ function Recruiter() {
             </tbody>
           </table>
         </div>
+      </Panel>
 
-        <TeamPanel />
-      </main>
-    </div>
+      {readOnly ? null : (
+        <>
+          <h2 className="mt-12 text-lg font-semibold tracking-tight">Invites &amp; hiring team</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Single-use candidate links, and who on your team can see results.</p>
+          <div className="mt-4 grid items-start gap-5 lg:grid-cols-[1.4fr_1fr]">
+            <InvitePanel />
+            <TeamPanel />
+          </div>
+        </>
+      )}
+    </RecruiterPage>
+  )
+}
+
+/** Mirrors ROLES in convex/assessments.ts. */
+const ROLES = ['AI Engineer', 'Software Engineer', 'Backend Engineer', 'ML Engineer', 'Full-Stack Engineer']
+const LEVELS = ['Junior', 'Mid', 'Senior']
+const SCENARIO_LIST = Object.values(SCENARIOS)
+// Flagship: AI PR review with the agent (code review + agent chat).
+const DEFAULT_SCENARIO = SCENARIOS['pay-217-mid'] ?? SCENARIO_LIST[0]
+const levelOf = (id: string) => (LEVELS.includes(SCENARIOS[id].level) ? SCENARIOS[id].level : 'Junior')
+const fieldCls = 'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-ring focus:ring-2 focus:ring-ring/15'
+
+function AssessmentsPanel() {
+  const readOnly = useReadOnly()
+  const assessments = useQuery(api.assessments.list)
+  const create = useMutation(api.assessments.create)
+  const [role, setRole] = useState(ROLES[0])
+  const [scenarioId, setScenarioId] = useState(DEFAULT_SCENARIO.id)
+  const [level, setLevel] = useState(levelOf(DEFAULT_SCENARIO.id))
+  const [minutes, setMinutes] = useState(String(DEFAULT_SCENARIO.minutes))
+  const [aiAssisted, setAiAssisted] = useState(true)
+  const [rotate, setRotate] = useState(false)
+  const variants = variantsOf(scenarioId)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState<{ id: string; token: string } | null>(null)
+  const aiRequired = SCENARIOS[scenarioId]?.kind === 'build'
+  const [roleFilter, setRoleFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const shown = assessments?.filter((a) => (!roleFilter || a.role === roleFilter) && (!statusFilter || a.status === statusFilter))
+
+  const pickScenario = (id: string) => {
+    setScenarioId(id)
+    setMinutes(String(SCENARIOS[id].minutes))
+    setLevel(levelOf(id))
+    setAiAssisted(true)
+    setRotate(false)
+  }
+  // Level chooses content: switch to this module type's scenario written for that level, if there is one.
+  const pickLevel = (l: string) => {
+    setLevel(l)
+    const kind = SCENARIOS[scenarioId].kind
+    const match = SCENARIO_LIST.find((sc) => sc.kind === kind && sc.level === l)
+    if (match && match.id !== scenarioId) pickScenario(match.id)
+  }
+
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      setCreated(await create({ role, scenarioId, level, minutes: Number(minutes), aiAssisted: aiRequired || aiAssisted, rotate: rotate && variants.length > 1 }))
+    } catch (err) {
+      setError(cleanError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {readOnly ? null : <Panel className="mt-8" title="Create assessment" description="Pick a role and module. Everyone who opens the link gets their own attempt.">
+        <form onSubmit={send} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_2fr_140px_140px]">
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+            Role
+            <select value={role} onChange={(e) => setRole(e.target.value)} className={fieldCls}>
+              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+            Module
+            <select value={scenarioId} onChange={(e) => pickScenario(e.target.value)} className={fieldCls}>
+              {SCENARIO_LIST.map((sc) => (
+                <option key={sc.id} value={sc.id}>{MODULE_LABEL[sc.kind]} · {sc.ticketId} {sc.title} ({sc.level})</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+            Level
+            <select value={level} onChange={(e) => pickLevel(e.target.value)} className={fieldCls}>
+              {LEVELS.map((l) => <option key={l}>{l}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+            Time limit (min)
+            <input type="number" min={10} max={90} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={fieldCls} />
+          </label>
+          <label className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm sm:col-span-2 lg:col-span-3">
+            <input type="checkbox" className="accent-primary" checked={aiRequired || aiAssisted} disabled={aiRequired} onChange={(e) => setAiAssisted(e.target.checked)} />
+            <span className="font-medium">AI-assisted</span>
+            <span className="text-xs text-muted-foreground">
+              {aiRequired
+                ? 'Always on for Build with AI modules.'
+                : 'On: the candidate can question the AI agent; judges score the whole interaction. Off: no agent chat.'}
+            </span>
+          </label>
+          {variants.length > 1 ? (
+            <label className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm sm:col-span-2 lg:col-span-4">
+              <input type="checkbox" className="accent-primary" checked={rotate} onChange={(e) => setRotate(e.target.checked)} />
+              <span className="font-medium">Rotate variants</span>
+              <span className="text-xs text-muted-foreground">
+                Each candidate gets one of {variants.map((id) => SCENARIOS[id].ticketId).join(' / ')} at random: same difficulty and issue mix, different code, so shared answers help less.
+              </span>
+            </label>
+          ) : null}
+          <button type="submit" disabled={busy} className={cn(btn.primary, 'whitespace-nowrap')}>
+            {busy ? 'Creating…' : 'Create assessment'}
+          </button>
+        </form>
+        {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
+        {created ? (
+          <div className="rb-rise mt-5 border-t border-border pt-5">
+            <AssessmentLink token={created.token} />
+            <Link to="/assessment" search={{ id: created.id }} className="mt-3 inline-block text-sm font-semibold text-primary hover:underline">
+              View candidates →
+            </Link>
+          </div>
+        ) : null}
+      </Panel>}
+
+      <Panel
+        flush
+        className="mt-5"
+        title="Your assessments"
+        description="Open one to see its candidates and compare them side by side."
+        actions={
+          <div className="flex gap-2">
+            <select aria-label="Filter by role" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className={fieldCls}>
+              <option value="">All roles</option>
+              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            </select>
+            <select aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={fieldCls}>
+              <option value="">Any status</option>
+              <option value="active">Active</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+        }
+      >
+      <div className="mt-4 overflow-x-auto border-t border-border">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+              <th className="px-6 py-3 font-semibold">Assessment</th>
+              <th className="px-5 py-3 font-semibold">Module</th>
+              <th className="px-5 py-3 font-semibold">Joined</th>
+              <th className="px-5 py-3 font-semibold">In progress</th>
+              <th className="px-5 py-3 font-semibold">Submitted</th>
+              <th className="px-5 py-3 font-semibold">Avg score</th>
+              <th className="px-5 py-3 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown === undefined ? (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground"><Loader2 className="mx-auto size-5 animate-spin" /></td></tr>
+            ) : shown.length === 0 ? (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-muted-foreground">{assessments?.length ? 'No assessments match these filters.' : 'No assessments yet. Create one above.'}</td></tr>
+            ) : (
+              shown.map((a) => (
+                <tr key={a._id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
+                  <td className="px-6 py-4">
+                    <Link to="/assessment" search={{ id: a._id }} className="font-semibold hover:text-primary hover:underline">{a.title}</Link>
+                    <div className="text-xs text-muted-foreground">{a.role} · {a.level} · {a.minutes} min{a.aiAssisted ? ' · AI-assisted' : ''}</div>
+                  </td>
+                  <td className="px-5 py-4 text-muted-foreground">{SCENARIOS[a.scenarioId]?.ticketId ?? a.scenarioId}</td>
+                  <td className="px-5 py-4 font-mono">{a.counts.invited + a.counts.started + a.counts.submitted}</td>
+                  <td className="px-5 py-4 font-mono">{a.counts.started}</td>
+                  <td className="px-5 py-4 font-mono">{a.counts.submitted}</td>
+                  <td className="px-5 py-4 font-mono">{a.avgScore === null ? '—' : Math.round(a.avgScore)}</td>
+                  <td className="px-5 py-4"><StatusPill status={a.status} /></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      </Panel>
+    </>
   )
 }
 
@@ -199,13 +408,11 @@ function TeamPanel() {
   }
 
   return (
-    <section className="mt-10 rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Hiring team</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Only team members can see results and answer keys.
-        {isOwner ? ' Invited people get access after they sign up and verify that email.' : ''}
-      </p>
-      <ul className="mt-4 divide-y divide-border">
+    <Panel
+      title="Hiring team"
+      description={`Only team members can see results and answer keys.${isOwner ? ' Invited people get access after they sign up and verify that email.' : ''}`}
+    >
+      <ul className="divide-y divide-border">
         {team.members.map((m) => (
           <li key={m._id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
             <span className="truncate">
@@ -249,19 +456,15 @@ function TeamPanel() {
             onChange={(e) => { setEmail(e.target.value); setError('') }}
             placeholder="teammate@company.com"
             aria-label="Teammate email"
-            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+            className={cn(fieldCls, 'flex-1')}
           />
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-          >
+          <button type="submit" disabled={busy} className={btn.primary}>
             Invite
           </button>
         </form>
       ) : null}
       {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
-    </section>
+    </Panel>
   )
 }
 
@@ -329,13 +532,12 @@ function InvitePanel() {
     return true
   })
   return (
-    <section className="mt-8 rounded-xl border border-border bg-card p-6">
-      <h2 className="text-sm font-semibold">Invite a candidate</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Each candidate gets a personal, single-use link. The link is copied to your clipboard when you create it.
-      </p>
-      <form onSubmit={send} className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_140px_auto]">
-        <select value={assessment} onChange={(e) => setAssessment(e.target.value)} aria-label="Assessment" className="rounded-md border border-input bg-background px-3 py-2 text-sm sm:col-span-4">
+    <Panel
+      title="Invite a candidate"
+      description="Each candidate gets a personal, single-use link. It is copied to your clipboard, and emailed to the candidate if you enter an address."
+    >
+      <form onSubmit={send} className="grid gap-2.5 sm:grid-cols-2">
+        <select value={assessment} onChange={(e) => setAssessment(e.target.value)} aria-label="Assessment" className={cn(fieldCls, 'sm:col-span-2')}>
           <optgroup label="Single module">
             {Object.values(SCENARIOS).map((sc) => (
               <option key={sc.id} value={`scenario:${sc.id}`}>{MODULE_LABEL[sc.kind]} · {sc.ticketId} {sc.title} ({sc.level}, {sc.minutes} min)</option>
@@ -350,18 +552,18 @@ function InvitePanel() {
           </optgroup>
         </select>
         <input value={name} onChange={(e) => { setName(e.target.value); setError('') }} placeholder="Candidate name" aria-label="Candidate name" required maxLength={120}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30" />
+          className={fieldCls} />
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" aria-label="Candidate email" type="email"
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30" />
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          Extra min
+          className={fieldCls} />
+        <label className="flex items-center gap-2 whitespace-nowrap text-xs font-medium text-muted-foreground">
+          Extra minutes
           <input value={extra} onChange={(e) => setExtra(e.target.value)} type="number" min={0} max={120} aria-label="Extra minutes (accommodation)"
-            className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground" />
+            className={fieldCls} />
         </label>
-        <button type="submit" disabled={busy} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+        <button type="submit" disabled={busy} className={btn.primary}>
           Create link
         </button>
-        <details className="text-xs text-muted-foreground sm:col-span-4">
+        <details className="text-xs text-muted-foreground sm:col-span-2">
           <summary className="cursor-pointer font-semibold">More options</summary>
           <div className="mt-2 flex flex-wrap items-center gap-4">
             <label className="inline-flex items-center gap-2">
@@ -371,7 +573,7 @@ function InvitePanel() {
             <label className="inline-flex items-center gap-2">
               Self-identified group (optional, with consent)
               <input value={group} onChange={(e) => setGroup(e.target.value)} maxLength={60} aria-label="Self-identified group"
-                className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground" />
+                className="rounded-lg border border-input bg-card px-2 py-1 text-sm text-foreground" />
             </label>
           </div>
         </details>
@@ -413,31 +615,31 @@ function InvitePanel() {
           ))}
         </ul>
       ) : null}
-    </section>
+    </Panel>
   )
 }
 
-/** ATS-friendly export of the dashboard rows (webhook integrations: later). */
-function downloadCsv(rows: Array<Record<string, unknown>>) {
-  const cols = ['candidateName', 'scenarioId', 'level', 'status', 'overall', 'band', 'found', 'total', 'needsReview', 'reviewResolved', 'autoSubmitted', 'submittedAt']
-  const esc = (v: unknown) => {
-    const s = v === undefined || v === null ? '' : String(v)
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const lines = [cols.join(','), ...rows.map((r) => cols.map((c) => esc(c === 'submittedAt' ? new Date(r[c] as number).toISOString() : r[c])).join(','))]
-  const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `reviewbench-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
+const DASHBOARD_COLS = ['candidateName', 'scenarioId', 'level', 'status', 'overall', 'band', 'found', 'total', 'needsReview', 'reviewResolved', 'autoSubmitted', 'submittedAt']
+
+/** ATS-friendly export of the dashboard rows. */
+const exportDashboard = (rows: Array<Record<string, unknown>>) =>
+  downloadCsv('submissions', DASHBOARD_COLS, rows.map((r) => DASHBOARD_COLS.map((c) => (c === 'submittedAt' ? new Date(r[c] as number).toISOString() : r[c]))))
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: 'danger' }) {
   return (
-    <div className={tone === 'danger' ? 'min-w-40 rounded-xl border border-destructive/30 bg-card px-5 py-4' : 'min-w-40 rounded-xl border border-border bg-card px-5 py-4'}>
-      <div className={tone === 'danger' ? 'font-mono text-2xl font-semibold text-destructive' : 'font-mono text-2xl font-semibold'}>{value}</div>
-      <div className={tone === 'danger' ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>{label}</div>
+    <div className={cn('rounded-xl border bg-card px-5 py-4 shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]', tone === 'danger' ? 'border-destructive/30' : 'border-border')}>
+      <div className={cn('text-xs font-medium', tone === 'danger' ? 'text-destructive' : 'text-muted-foreground')}>{label}</div>
+      <div className={cn('mt-1 font-mono text-3xl font-semibold tracking-tight', tone === 'danger' && 'text-destructive')}>{value}</div>
     </div>
+  )
+}
+
+function StatusPill({ status }: { status: string }) {
+  const active = status === 'active'
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize', active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground')}>
+      <span className={cn('size-1.5 rounded-full', active ? 'bg-success' : 'bg-muted-foreground/60')} />
+      {status}
+    </span>
   )
 }
