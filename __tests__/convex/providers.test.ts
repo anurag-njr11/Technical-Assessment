@@ -40,6 +40,7 @@ describe("model providers", () => {
   })
 
   it("backs off on 429 (Retry-After) and then succeeds", async () => {
+    process.env.GROQ_API_KEY = "q"
     vi.useFakeTimers()
     let n = 0
     vi.stubGlobal("fetch", vi.fn(async () => (++n < 3 ? new Response("slow down", { status: 429, headers: { "retry-after": "1" } }) : ok("done"))))
@@ -50,6 +51,7 @@ describe("model providers", () => {
   })
 
   it("caps concurrent calls per provider", async () => {
+    process.env.GEMINI_API_KEY = "g"
     let inFlight = 0
     let peak = 0
     vi.stubGlobal("fetch", vi.fn(async () => {
@@ -73,6 +75,13 @@ describe("model providers", () => {
     expect(() => validatePanel(FREE_PANEL)).not.toThrow()
     expect(() => validatePanel(LOCAL_PANEL)).not.toThrow()
     expect(() => validatePanel([{ ...FREE_PANEL[0], primary: { ...FREE_PANEL[0].primary, provider: "nope" as never } }, FREE_PANEL[1], FREE_PANEL[2]])).toThrow(/Unknown provider/)
+  })
+
+  it("says which key is missing instead of calling the provider", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(callModel({ provider: "groq", model: "m", family: "f" }, "hi")).rejects.toThrow("GROQ_API_KEY is not set.")
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("strips reasoning blocks from replies", () => {

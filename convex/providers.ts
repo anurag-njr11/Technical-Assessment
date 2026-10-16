@@ -14,6 +14,7 @@ export const PROVIDERS: Provider[] = ["openrouter", "gemini", "groq", "ollama"]
 export type ModelRef = { model: string; family: string; provider?: Provider }
 
 const OPENROUTER = "https://openrouter.ai/api/v1"
+const KEY_VAR: Record<Exclude<Provider, "ollama">, string> = { openrouter: "OPENROUTER_API_KEY", gemini: "GEMINI_API_KEY", groq: "GROQ_API_KEY" }
 
 function endpoint(ref: ModelRef): { baseUrl: string; key?: string } {
   switch (ref.provider) {
@@ -76,6 +77,8 @@ const MAX_429_RETRIES = 3
 /** POSTs to the model's endpoint; waits for a slot and retries 429/503 (Retry-After or exponential). */
 export async function post(ref: ModelRef, body: Record<string, unknown>): Promise<Response> {
   const { baseUrl, key } = endpoint(ref)
+  const keyVar = ref.provider && ref.provider !== "ollama" ? KEY_VAR[ref.provider] : null
+  if (keyVar && !key) throw new Error(`${keyVar} is not set.`)
   const slot = ref.provider ?? "default"
   await acquire(slot)
   try {
